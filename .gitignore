@@ -1,3 +1,7 @@
 *.log
 .cache/
 secrets*
+theme/.config/theme/current.*
+theme/.config/theme/mode
+theme/.config/theme/current.*
+theme/.config/theme/mode

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+T="$HOME/.config/theme"
+cur=$(cat "$T/mode" 2>/dev/null || echo dark)
+
+case "${1:-toggle}" in
+  dark|light) mode="$1" ;;
+  *) [ "$cur" = dark ] && mode=light || mode=dark ;;
+esac
+echo "$mode" > "$T/mode"
+
+for f in css conf rasi; do
+  ln -sf "$T/$mode/colors.$f" "$T/current.$f"
+done
+
+if [ "$mode" = dark ]; then
+  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
+  gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark'
+else
+  gsettings set org.gnome.desktop.interface color-scheme 'prefer-light'
+  gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Light'
+fi
+
+hyprctl reload
+pkill -SIGUSR2 waybar 2>/dev/null
+swaync-client -rs 2>/dev/null
+echo "Tema: $mode"
