@@ -15,9 +15,11 @@ done
 if [ "$mode" = dark ]; then
   gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
   gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark'
+  gsettings set org.gnome.desktop.interface icon-theme 'WhiteSur-dark'
 else
   gsettings set org.gnome.desktop.interface color-scheme 'prefer-light'
   gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Light'
+  gsettings set org.gnome.desktop.interface icon-theme 'WhiteSur-light'
 fi
 
 hyprctl reload

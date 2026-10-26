@@ -1,0 +1,36 @@
+@import url("file:///home/shadow/.config/theme/current.css");
+
+* {
+    font-family: "Inter", "JetBrainsMono Nerd Font";
+    font-size: 13px;
+    border: none;
+    min-height: 0;
+}
+
+window#waybar {
+    background: transparent;
+    color: @text;
+}
+
+.modules-left, .modules-right {
+    background: @bg;
+    border: 1px solid @border;
+    border-radius: 14px;
+    padding: 2px 10px;
+}
+
+#workspaces button {
+    padding: 0 8px;
+    color: @subtext;
+    background: transparent;
+    border-radius: 10px;
+}
+
+#workspaces button.active {
+    color: @text;
+    background: @surface;
+}
+
+#clock, #battery, #network, #pulseaudio, #window {
+    padding: 0 8px;
+}
