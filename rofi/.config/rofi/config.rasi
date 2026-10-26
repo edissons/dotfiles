@@ -1,0 +1,72 @@
+@import "/home/shadow/.config/theme/current.rasi"
+
+configuration {
+    modi: "drun";
+    show-icons: true;
+    icon-theme: "WhiteSur-dark";
+    drun-display-format: "{name}";
+    font: "Inter 13";
+}
+
+window {
+    location: center;
+    anchor: center;
+    width: 640px;
+    background-color: @bg;
+    border: 1px;
+    border-color: @border;
+    border-radius: 18px;
+}
+
+mainbox {
+    padding: 14px;
+    spacing: 10px;
+    background-color: transparent;
+    children: [ "inputbar", "listview" ];
+}
+
+inputbar {
+    padding: 12px 14px;
+    background-color: @surface;
+    border-radius: 12px;
+    children: [ "entry" ];
+}
+
+entry {
+    placeholder: "Buscar";
+    placeholder-color: @subtext;
+    text-color: @text;
+    background-color: transparent;
+}
+
+listview {
+    lines: 6;
+    columns: 1;
+    scrollbar: false;
+    spacing: 4px;
+    background-color: transparent;
+}
+
+element {
+    padding: 8px 12px;
+    spacing: 12px;
+    border-radius: 10px;
+    background-color: transparent;
+    text-color: @text;
+}
+
+element selected.normal {
+    background-color: @accent;
+    text-color: #ffffff;
+}
+
+element-icon {
+    size: 28px;
+    background-color: transparent;
+}
+
+element-text {
+    background-color: transparent;
+    text-color: inherit;
+    vertical-align: 0.5;
+}
