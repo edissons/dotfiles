@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+M="$HOME/dotfiles/waybar/.config/waybar/modules.json"
+R=(rofi -dmenu -no-custom -i -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi")
+save() { jq "$@" "$M" > "$M.tmp" && mv "$M.tmp" "$M"; }
+
+list=$(jq -r '. as $m | ["left","center","right"][] as $z | $m[$z][] as $n
+  | "\(if ($m.disabled | index($n)) then "✗" else "✓" end)  \($n)  [\($z)]"' "$M")
+sel=$(printf '%s\n' "$list" | "${R[@]}" -p "Módulos") || exit 0
+name=$(awk '{print $2}' <<<"$sel")
+action=$(printf '%s\n' "Activar / desactivar" "Mover a la izquierda" "Mover al centro" "Mover a la derecha" \
+  | "${R[@]}" -p "$name") || exit 0
+
+mv_to() { save --arg n "$name" ".left -= [\$n] | .center -= [\$n] | .right -= [\$n] | .$1 += [\$n]"; }
+case "$action" in
+  Activar*)  save --arg n "$name" 'if (.disabled | index($n)) then .disabled -= [$n] else .disabled += [$n] end' ;;
+  *izquierda) mv_to left ;;
+  *centro)    mv_to center ;;
+  *derecha)   mv_to right ;;
+  *) exit 0 ;;
+esac
+"$HOME/.local/bin/waybar-restart"

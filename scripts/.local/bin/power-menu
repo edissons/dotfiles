@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+choice=$(printf '%s\n' "Bloquear" "Cerrar sesión" "Suspender" "Hibernar" "Reiniciar" "Apagar" \
+  | rofi -dmenu -no-custom -i -p "Sesión" -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi")
+case "$choice" in
+  Bloquear)       command -v hyprlock >/dev/null && hyprlock || loginctl lock-session ;;
+  "Cerrar sesión") hyprctl dispatch exit ;;
+  Suspender)      systemctl suspend ;;
+  Hibernar)       systemctl hibernate ;;
+  Reiniciar)      systemctl reboot ;;
+  Apagar)         systemctl poweroff ;;
+esac

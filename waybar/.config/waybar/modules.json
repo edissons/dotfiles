@@ -1,0 +1,32 @@
+{
+  "left": [
+    "custom/logo",
+    "hyprland/workspaces",
+    "hyprland/window"
+  ],
+  "center": [],
+  "right": [
+    "tray",
+    "custom/updates",
+    "cpu",
+    "memory",
+    "temperature",
+    "backlight",
+    "bluetooth",
+    "network",
+    "pulseaudio",
+    "battery",
+    "clock",
+    "custom/keybinds",
+    "custom/wallpaper",
+    "custom/theme",
+    "custom/settings",
+    "custom/power"
+  ],
+  "disabled": [
+    "cpu",
+    "temperature",
+    "bluetooth",
+    "network"
+  ]
+}

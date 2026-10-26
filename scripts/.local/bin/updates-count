@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+pac=$(checkupdates 2>/dev/null | wc -l)
+aur=$(paru -Qua 2>/dev/null | wc -l)
+fp=$(flatpak remote-ls --updates 2>/dev/null | wc -l)
+total=$((pac + aur + fp))
+if [ "$total" -eq 0 ]; then
+  printf '{"text":"","tooltip":"Sistema al día"}\n'
+else
+  printf '{"text":"%s","tooltip":"Pacman: %s\\nAUR: %s\\nFlatpak: %s"}\n' "$total" "$pac" "$aur" "$fp"
+fi

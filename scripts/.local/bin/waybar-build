@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+W="$HOME/dotfiles/waybar/.config/waybar"
+OUT="$HOME/.cache/waybar/config.json"
+mkdir -p "$(dirname "$OUT")"
+jq -s '
+  .[0] as $m | .[1] + {
+    "modules-left":   ($m.left   - $m.disabled),
+    "modules-center": ($m.center - $m.disabled),
+    "modules-right":  ($m.right  - $m.disabled)
+  }' "$W/modules.json" "$W/definitions.json" > "$OUT.tmp" && mv "$OUT.tmp" "$OUT"

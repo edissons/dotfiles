@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
+W="$HOME/dotfiles/waybar/.config/waybar"
+"$HOME/.local/bin/waybar-build" || exit 1
 pkill -x waybar
 sleep 0.3
-nohup waybar \
-  -c "$HOME/dotfiles/waybar/.config/waybar/config.jsonc" \
-  -s "$HOME/dotfiles/waybar/.config/waybar/style.css" \
-  >/dev/null 2>&1 &
+setsid nohup waybar -c "$HOME/.cache/waybar/config.json" -s "$W/style.css" >/dev/null 2>&1 &

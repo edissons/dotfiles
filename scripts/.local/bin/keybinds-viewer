@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+hyprctl binds -j | jq -r '
+  def hb($b): ((.modmask / $b | floor) % 2) == 1;
+  def mods: [ (if hb(64) then "SUPER" else empty end), (if hb(4) then "CTRL" else empty end),
+              (if hb(8) then "ALT" else empty end), (if hb(1) then "SHIFT" else empty end) ];
+  .[] | ((mods + [.key]) | join(" + ")) + "   →   " + .dispatcher + " " + .arg' \
+  | rofi -dmenu -i -p "Atajos" -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" >/dev/null

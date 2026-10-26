@@ -1,0 +1,96 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "margin-top": 8,
+  "margin-left": 12,
+  "margin-right": 12,
+
+  "custom/logo": {
+    "format": "󰣇",
+    "tooltip": false,
+    "on-click": "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi"
+  },
+  "hyprland/workspaces": { "format": "{id}", "on-click": "activate", "persistent-workspaces": { "*": 4 } },
+  "hyprland/window": { "format": "{title}", "max-length": 40, "separate-outputs": true },
+  "tray": { "icon-size": 16, "spacing": 10 },
+
+  "custom/updates": {
+    "exec": "$HOME/.local/bin/updates-count",
+    "return-type": "json",
+    "interval": 1800,
+    "format": "󰏔 {}",
+    "hide-empty-text": true,
+    "on-click": "kitty -e bash -c 'paru -Syu; flatpak update; read -rp \"Enter para cerrar\"'"
+  },
+
+  "cpu": { "format": "󰻠 {usage}%", "interval": 3 },
+  "memory": { "format": "󰍛 {percentage}%", "interval": 5, "tooltip-format": "{used:0.1f} GiB / {total:0.1f} GiB" },
+  "temperature": { "format": "󰔏 {temperatureC}°C", "critical-threshold": 85, "interval": 5 },
+
+  "backlight": {
+    "format": "{icon} {percent}%",
+    "format-icons": ["󰃞", "󰃟", "󰃠"],
+    "on-scroll-up": "brightnessctl set +5%",
+    "on-scroll-down": "brightnessctl set 5%-"
+  },
+
+  "bluetooth": {
+    "format": "󰂯",
+    "format-off": "󰂲",
+    "format-disabled": "󰂲",
+    "tooltip-format": "{status}",
+    "on-click": "blueman-manager"
+  },
+
+  "network": {
+    "format-wifi": "󰖩",
+    "format-ethernet": "󰈀",
+    "format-disconnected": "󰖪",
+    "tooltip-format-wifi": "{essid} ({signalStrength}%)",
+    "tooltip-format-ethernet": "{ifname}",
+    "tooltip-format-disconnected": "Sin conexión",
+    "on-click": "kitty -e nmtui"
+  },
+
+  "pulseaudio": {
+    "format": "{icon} {volume}%",
+    "format-muted": "󰝟",
+    "format-icons": { "default": ["󰕿", "󰖀", "󰕾"] },
+    "scroll-step": 5,
+    "on-click": "pamixer -t"
+  },
+
+  "battery": {
+    "states": { "warning": 30, "critical": 15 },
+    "format": "{icon} {capacity}%",
+    "format-charging": "󰂄 {capacity}%",
+    "format-plugged": "󰂄 {capacity}%",
+    "format-icons": ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
+  },
+
+  "clock": {
+    "format": "{:%a %d %b  %H:%M}",
+    "format-alt": "{:%A, %d de %B de %Y}",
+    "tooltip-format": "<tt><small>{calendar}</small></tt>",
+    "calendar": {
+      "mode": "month",
+      "weeks-pos": "right",
+      "on-scroll": 1,
+      "format": {
+        "months": "<span color='#0a84ff'><b>{}</b></span>",
+        "days": "<span color='#8e8e93'>{}</span>",
+        "weeks": "<span color='#8e8e93'><small>S{}</small></span>",
+        "weekdays": "<span color='#8e8e93'><b>{}</b></span>",
+        "today": "<span color='#ff9f0a'><b><u>{}</u></b></span>"
+      }
+    },
+    "actions": { "on-click-right": "mode", "on-scroll-up": "shift_up", "on-scroll-down": "shift_down" }
+  },
+
+  "custom/keybinds": { "format": "󰌌", "tooltip": false, "on-click": "$HOME/.local/bin/keybinds-viewer" },
+  "custom/wallpaper": { "format": "󰸉", "tooltip": false, "on-click": "$HOME/.local/bin/wallpaper-select" },
+  "custom/theme": { "format": "󰔎", "tooltip": false, "on-click": "$HOME/.local/bin/theme-toggle" },
+  "custom/settings": { "format": "󰒓", "tooltip": false, "on-click": "$HOME/.local/bin/waybar-settings" },
+  "custom/power": { "format": "󰐥", "tooltip": false, "on-click": "$HOME/.local/bin/power-menu" }
+}
