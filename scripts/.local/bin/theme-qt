@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+KV_DARK="KvMojave"
+KV_LIGHT="KvMojaveLight"
+[ "$1" = light ] && KV="$KV_LIGHT" || KV="$KV_DARK"
+mkdir -p "$HOME/.config/Kvantum"
+if command -v kvantummanager >/dev/null; then
+  kvantummanager --set "$KV" >/dev/null 2>&1
+else
+  printf '[General]\ntheme=%s\n' "$KV" > "$HOME/.config/Kvantum/kvantum.kvconfig"
+fi

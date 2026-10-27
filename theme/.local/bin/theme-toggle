@@ -28,6 +28,7 @@ if [ -f "$GTK3" ]; then
 fi
 
 setsid "$HOME/.local/bin/dock-restart" >/dev/null 2>&1 &
+"$HOME/.local/bin/theme-qt" "$mode"
 swaync-client -rs >/dev/null 2>&1
 pkill -USR1 -x kitty 2>/dev/null
 hyprctl reload
