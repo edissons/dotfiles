@@ -6,3 +6,8 @@
     subtext: #a1a1a6;
     accent: #0a84ff;
 }
+
+* {
+    tile: #ffffff14;
+    tile-selected: #ffffff26;
+}

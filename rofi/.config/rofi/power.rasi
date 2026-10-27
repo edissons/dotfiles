@@ -1,0 +1,91 @@
+@import "/home/shadow/.config/theme/current.rasi"
+
+configuration {
+    font: "Inter 10";
+    show-icons: true;
+}
+
+window {
+    location: center;
+    anchor: center;
+    width: 820px;
+    background-color: @bg;
+    border: 1px;
+    border-color: @border;
+    border-radius: 24px;
+}
+
+mainbox {
+    padding: 24px 24px 18px 24px;
+    spacing: 16px;
+    background-color: transparent;
+    children: [ "listview", "message" ];
+}
+
+message {
+    background-color: transparent;
+    padding: 0;
+    border: 0;
+}
+
+textbox {
+    background-color: transparent;
+    text-color: @subtext;
+    horizontal-align: 0.5;
+    font: "Inter 10";
+}
+
+listview {
+    columns: 6;
+    lines: 1;
+    fixed-columns: true;
+    spacing: 12px;
+    scrollbar: false;
+    background-color: transparent;
+}
+
+/* AJUSTE DE TAMAÑO: cambia el padding (arriba derecha abajo izquierda) */
+element {
+    orientation: vertical;
+    padding: 22px 6px 16px 6px;
+    spacing: 10px;
+    border: 1px;
+    border-radius: 20px;
+}
+
+element normal.normal, element alternate.normal {
+    background-color: @tile;
+    text-color: @text;
+    border-color: @border;
+}
+
+element selected.normal {
+    background-color: @tile-selected;
+    text-color: @text;
+    border-color: @text;
+}
+
+element normal.active, element alternate.active {
+    background-color: @accent;
+    text-color: #ffffff;
+    border-color: @accent;
+}
+
+element selected.active {
+    background-color: @accent;
+    text-color: #ffffff;
+    border-color: @text;
+}
+
+element-icon {
+    size: 56px;
+    horizontal-align: 0.5;
+    background-color: transparent;
+}
+
+element-text {
+    horizontal-align: 0.5;
+    vertical-align: 0.5;
+    background-color: transparent;
+    text-color: inherit;
+}

@@ -13,15 +13,21 @@ for f in css conf rasi; do
 done
 
 if [ "$mode" = dark ]; then
-  gsettings set org.gnome.desktop.interface color-scheme 'prefer-dark'
-  gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Dark'
-  gsettings set org.gnome.desktop.interface icon-theme 'WhiteSur-dark'
+  GTKT='WhiteSur-Dark'; ICONS='WhiteSur-glass'; SCHEME='prefer-dark'
 else
-  gsettings set org.gnome.desktop.interface color-scheme 'prefer-light'
-  gsettings set org.gnome.desktop.interface gtk-theme 'WhiteSur-Light'
-  gsettings set org.gnome.desktop.interface icon-theme 'WhiteSur-light'
+  GTKT='WhiteSur-Light'; ICONS='WhiteSur-glass-light'; SCHEME='prefer-light'
+fi
+gsettings set org.gnome.desktop.interface color-scheme "$SCHEME"
+gsettings set org.gnome.desktop.interface gtk-theme "$GTKT"
+gsettings set org.gnome.desktop.interface icon-theme "$ICONS"
+
+GTK3="$HOME/.config/gtk-3.0/settings.ini"
+if [ -f "$GTK3" ]; then
+  sed -i --follow-symlinks "s/^gtk-theme-name=.*/gtk-theme-name=$GTKT/" "$GTK3"
+  sed -i --follow-symlinks "s/^gtk-icon-theme-name=.*/gtk-icon-theme-name=$ICONS/" "$GTK3"
 fi
 
+setsid "$HOME/.local/bin/dock-restart" >/dev/null 2>&1 &
 hyprctl reload
 pkill -SIGUSR2 waybar 2>/dev/null
 swaync-client -rs 2>/dev/null

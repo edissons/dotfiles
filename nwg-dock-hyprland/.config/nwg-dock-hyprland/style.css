@@ -1,0 +1,33 @@
+@import url("file:///home/shadow/.config/theme/current.css");
+
+window {
+    background: @bg;
+    border: 1px solid @border;
+    border-radius: 22px;
+}
+
+#box {
+    padding: 6px 10px;
+    background: transparent;
+}
+
+button, image {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+button {
+    padding: 6px;
+    margin: 0 4px;
+    border-radius: 14px;
+    transition: background 0.2s ease;
+}
+
+button:hover {
+    background: @surface;
+}
+
+#active {
+    border-bottom: 3px solid @accent;
+}
