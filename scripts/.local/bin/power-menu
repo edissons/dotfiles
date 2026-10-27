@@ -46,7 +46,7 @@ if [ "$action" != lock ]; then
 fi
 
 case "$action" in
-  lock)      command -v hyprlock >/dev/null && hyprlock || loginctl lock-session ;;
+  lock)      "$HOME/.local/bin/lock-screen" ;;
   logout)    hyprctl dispatch exit ;;
   suspend)   systemctl suspend ;;
   hibernate) systemctl hibernate ;;
