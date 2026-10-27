@@ -1,0 +1,24 @@
+foreground #1d1d1f
+background #f6f6f8
+selection_foreground #ffffff
+selection_background #007aff
+cursor #1d1d1f
+cursor_text_color #f6f6f8
+url_color #007aff
+
+color0 #1d1d1f
+color8 #6e6e73
+color1 #ff3b30
+color9 #d70015
+color2 #34c759
+color10 #248a3d
+color3 #b38600
+color11 #8a6500
+color4 #007aff
+color12 #0040dd
+color5 #af52de
+color13 #8944ab
+color6 #32ade6
+color14 #0071a4
+color7 #aeaeb2
+color15 #8e8e93

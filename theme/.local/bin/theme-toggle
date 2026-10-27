@@ -8,7 +8,7 @@ case "${1:-toggle}" in
 esac
 echo "$mode" > "$T/mode"
 
-for f in css conf rasi; do
+for f in css conf rasi kitty; do
   ln -sf "$T/$mode/colors.$f" "$T/current.$f"
 done
 
@@ -29,6 +29,7 @@ fi
 
 setsid "$HOME/.local/bin/dock-restart" >/dev/null 2>&1 &
 swaync-client -rs >/dev/null 2>&1
+pkill -USR1 -x kitty 2>/dev/null
 hyprctl reload
 setsid sh -c "sleep 0.3; pkill -SIGUSR2 waybar" >/dev/null 2>&1 &
 echo "Tema: $mode"
