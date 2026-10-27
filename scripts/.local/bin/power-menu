@@ -38,10 +38,10 @@ labels=("Bloqueando" "Cerrando sesión" "Suspendiendo" "Hibernando" "Reiniciando
 action=${names[$idx]}
 
 if [ "$action" != lock ]; then
-  timeout 3 rofi -dmenu -no-custom -config "$CFG" "${KB[@]}" \
+  printf 'Cancelar\n' | timeout 3 rofi -dmenu -no-custom -config "$CFG" "${KB[@]}" \
     -mesg "${labels[$idx]} en 3 segundos…"$'\n'"Esc o Retroceso para cancelar" \
-    -theme-str 'window { width: 460px; } mainbox { children: [ "message" ]; } textbox { horizontal-align: 0.5; font: "Inter Bold 13"; text-color: @text; }' \
-    < /dev/null
+    -theme-str 'window { width: 400px; } mainbox { padding: 18px; spacing: 12px; } listview { lines: 1; columns: 1; fixed-height: false; } element { padding: 8px 12px; border-radius: 12px; } element-icon { size: 0px; } element-text { horizontal-align: 0.5; } textbox { horizontal-align: 0.5; font: "Inter Bold 13"; text-color: @text; }' \
+    >/dev/null
   [ $? -eq 124 ] || exit 0
 fi
 
