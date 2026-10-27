@@ -28,7 +28,7 @@ if [ -f "$GTK3" ]; then
 fi
 
 setsid "$HOME/.local/bin/dock-restart" >/dev/null 2>&1 &
+swaync-client -rs >/dev/null 2>&1
 hyprctl reload
-pkill -SIGUSR2 waybar 2>/dev/null
-swaync-client -rs 2>/dev/null
+setsid sh -c "sleep 0.3; pkill -SIGUSR2 waybar" >/dev/null 2>&1 &
 echo "Tema: $mode"

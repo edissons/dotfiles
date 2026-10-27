@@ -1,0 +1,64 @@
+@import url("file:///home/shadow/.config/theme/current.css");
+
+* {
+    font-family: "Inter", "JetBrainsMono Nerd Font";
+    font-size: 13px;
+}
+
+.notification-row { outline: none; background: transparent; }
+.notification-row:focus, .notification-row:hover { background: transparent; }
+
+.notification {
+    background: @bg;
+    border: 1px solid @border;
+    border-radius: 18px;
+    margin: 6px 12px;
+    padding: 0;
+}
+.notification.critical { border-color: @red; }
+
+.notification-content { background: transparent; padding: 12px; border-radius: 18px; }
+.summary { color: @text; font-weight: 600; }
+.body, .time { color: @subtext; }
+
+.close-button {
+    background: @surface;
+    color: @text;
+    border-radius: 999px;
+    margin: 6px;
+}
+
+.control-center {
+    background: @bg;
+    border: 1px solid @border;
+    border-radius: 22px;
+    padding: 8px;
+}
+.control-center-list { background: transparent; }
+
+.widget-title { color: @text; font-size: 16px; font-weight: 700; margin: 8px 12px; }
+.widget-title > button {
+    background: @surface;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 10px;
+    padding: 4px 10px;
+}
+
+.widget-dnd { color: @text; margin: 6px 12px; }
+.widget-dnd > switch {
+    background: @surface;
+    border: 1px solid @border;
+    border-radius: 999px;
+}
+.widget-dnd > switch:checked { background: @accent; }
+.widget-dnd > switch slider { background: @text; border-radius: 999px; }
+
+.widget-mpris, .widget-volume, .widget-backlight {
+    background: @surface;
+    color: @text;
+    border: 1px solid @border;
+    border-radius: 14px;
+    margin: 6px 12px;
+    padding: 8px;
+}

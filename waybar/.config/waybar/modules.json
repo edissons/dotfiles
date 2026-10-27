@@ -21,7 +21,8 @@
     "custom/wallpaper",
     "custom/theme",
     "custom/settings",
-    "custom/power"
+    "custom/power",
+    "custom/notifications"
   ],
   "disabled": [
     "cpu",

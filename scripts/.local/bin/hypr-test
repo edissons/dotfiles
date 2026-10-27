@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec dbus-run-session Hyprland -c "$HOME/dotfiles/hypr/.config/hypr/hyprland.conf"

@@ -75,3 +75,4 @@ padding: 0 10px;
 #custom-power:hover { color: @red; }
 #custom-keybinds:hover, #custom-wallpaper:hover,
 #custom-theme:hover, #custom-settings:hover { color: @accent; }
+#custom-notifications { padding: 0 10px; }
