@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -e
+MODE="${1:-dark}"
+SRC="$HOME/dotfiles/sddm/glass"
+DST="/usr/share/sddm/themes/glass"
+WALL="$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null || true)"
+[ -f "$WALL" ] || WALL="$HOME/Pictures/wallpapers/wall.jpg"
+EXT="${WALL##*.}"
+
+sudo rm -rf "$DST"
+sudo cp -r "$SRC" "$DST"
+sudo cp "$WALL" "$DST/background.$EXT"
+sudo sed -i "s|^background=.*|background=background.$EXT|; s|^mode=.*|mode=$MODE|" "$DST/theme.conf"
+echo "Tema instalado en $DST (modo $MODE, fondo $(basename "$WALL"))"

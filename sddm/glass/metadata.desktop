@@ -1,0 +1,11 @@
+[SddmGreeterTheme]
+Name=Glass
+Description=Login estilo glass inspirado en macOS
+Author=Mi tema
+Version=1.0
+Type=sddm-theme
+MainScript=Main.qml
+ConfigFile=theme.conf
+Theme-Id=glass
+Theme-API=2.0
+QTVersion=6

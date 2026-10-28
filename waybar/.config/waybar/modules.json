@@ -25,7 +25,6 @@
     "custom/notifications"
   ],
   "disabled": [
-    "cpu",
     "temperature",
     "bluetooth",
     "network"
