@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+TS="$(date +%Y%m%d-%H%M%S)"
+UI="SF Pro Text"
+DISPLAY="SF Pro Display"
+MONO="JetBrainsMono Nerd Font Mono"
+
+backup() {
+  [ -f "$1" ] && cp -a "$1" "$1.bak.$TS"
+}
+
+set_gtk_font() {
+  local file="$1"
+  if grep -q '^gtk-font-name=' "$file"; then
+    sed -i "s/^gtk-font-name=.*/gtk-font-name=$UI 10/" "$file"
+  elif grep -q '^\[Settings\]' "$file"; then
+    sed -i "/^\[Settings\]/a gtk-font-name=$UI 10" "$file"
+  else
+    printf '[Settings]\ngtk-font-name=%s 10\n' "$UI" >> "$file"
+  fi
+  sed -i '/^gtk-monospace-font-name=/d' "$file"
+}
+
+gsettings set org.gnome.desktop.interface font-name "$UI 10"
+gsettings set org.gnome.desktop.interface document-font-name "$UI 10"
+gsettings set org.gnome.desktop.interface monospace-font-name "$MONO 10"
+gsettings set org.gnome.desktop.wm.preferences titlebar-font "$DISPLAY 11" 2>/dev/null || true
+
+GTK3="$HOME/.config/gtk-3.0/settings.ini"
+if [ -f "$GTK3" ]; then
+  backup "$GTK3"
+  set_gtk_font "$GTK3"
+fi
+
+GTK4_DIR="$HOME/.config/gtk-4.0"
+GTK4="$GTK4_DIR/settings.ini"
+mkdir -p "$GTK4_DIR"
+if [ -f "$GTK4" ]; then
+  backup "$GTK4"
+else
+  : > "$GTK4"
+fi
+set_gtk_font "$GTK4"
+
+for QT in "$HOME/.config/qt5ct/qt5ct.conf" "$HOME/.config/qt6ct/qt6ct.conf"; do
+  [ -f "$QT" ] || continue
+  backup "$QT"
+  sed -i -E "s/^(general=\")[^,]+/\1$UI/; s/^(fixed=\")[^,]+/\1$MONO/" "$QT"
+done
+
+fc-cache -f >/dev/null
+echo "Fuentes aplicadas: $UI 10 / $DISPLAY 11 / $MONO 10"
+fc-match -f 'UI: %{family} | %{style} | %{file}\n' "$UI"
+fc-match -f 'Display: %{family} | %{style} | %{file}\n' "$DISPLAY"
+fc-match -f 'Mono: %{family} | %{style} | %{file}\n' "$MONO"

@@ -1,14 +1,50 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 MODE="${1:-dark}"
 SRC="$HOME/dotfiles/sddm/glass"
 DST="/usr/share/sddm/themes/glass"
 WALL="$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null || true)"
 [ -f "$WALL" ] || WALL="$HOME/Pictures/wallpapers/wall.jpg"
 EXT="${WALL##*.}"
+TS="$(date +%Y%m%d-%H%M%S)"
+BACKUP="/var/backups/sddm-themes"
 
-sudo rm -rf "$DST"
-sudo cp -r "$SRC" "$DST"
-sudo cp "$WALL" "$DST/background.$EXT"
+if [ -d "$DST" ]; then
+  sudo install -d -m 755 "$BACKUP"
+  sudo cp -a "$DST" "$BACKUP/glass.$TS"
+fi
+sudo install -d -m 755 "$DST"
+sudo cp -r "$SRC/." "$DST/"
+sudo install -m 644 "$WALL" "$DST/background.$EXT"
 sudo sed -i "s|^background=.*|background=background.$EXT|; s|^mode=.*|mode=$MODE|" "$DST/theme.conf"
+
+if [ -f /etc/sddm.conf ]; then
+  sudo cp -a /etc/sddm.conf "/etc/sddm.conf.bak.$TS"
+fi
+if grep -q '^\[Theme\]' /etc/sddm.conf 2>/dev/null; then
+  if grep -q '^[[:space:]]*Current=' /etc/sddm.conf; then
+    sudo sed -i 's|^[[:space:]]*Current=.*|    Current=glass|' /etc/sddm.conf
+  else
+    sudo sed -i '/^\[Theme\]/a\    Current=glass' /etc/sddm.conf
+  fi
+else
+  printf '\n[Theme]\n    Current=glass\n' | sudo tee -a /etc/sddm.conf >/dev/null
+fi
+
+HYDE="/etc/sddm.conf.d/the_hyde_project.conf"
+if [ -f "$HYDE" ]; then
+  sudo cp -a "$HYDE" "$HYDE.bak.$TS"
+  if grep -q '^[[:space:]]*Current=' "$HYDE"; then
+    sudo sed -i 's|^[[:space:]]*Current=.*|Current=glass|' "$HYDE"
+  fi
+fi
+
+if ! sudo -u sddm fc-match -f '%{family}\n' "SF Pro Text" 2>/dev/null | grep -q '^SF Pro Text'; then
+  echo "Aviso: el usuario sddm no resuelve SF Pro Text."
+  echo "Ejecuta: $HOME/.local/bin/fonts-install"
+fi
+
 echo "Tema instalado en $DST (modo $MODE, fondo $(basename "$WALL"))"
+echo "Backup del tema anterior: $BACKUP/glass.$TS"
+echo "Selección persistente: /etc/sddm.conf -> Current=glass"
+echo "Reinicia el equipo para ver el greeter."

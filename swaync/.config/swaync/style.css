@@ -1,7 +1,7 @@
 @import url("file:///home/shadow/.config/theme/current.css");
 
 * {
-    font-family: "Inter", "JetBrainsMono Nerd Font";
+    font-family: "SF Pro Text", "JetBrainsMono Nerd Font Mono";
     font-size: 13px;
 }
 
@@ -36,7 +36,7 @@
 }
 .control-center-list { background: transparent; }
 
-.widget-title { color: @text; font-size: 16px; font-weight: 700; margin: 8px 12px; }
+.widget-title { color: @text; font-family: "SF Pro Display"; font-size: 16px; font-weight: 700; margin: 8px 12px; }
 .widget-title > button {
     background: @surface;
     color: @text;

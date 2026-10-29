@@ -1,7 +1,7 @@
 @import url("file:///home/shadow/.config/theme/current.css");
 
 * {
-    font-family: "Inter", "JetBrainsMono Nerd Font";
+    font-family: "SF Pro Text", "JetBrainsMono Nerd Font Mono";
     font-size: 13px;
     border: none;
     min-height: 0;
@@ -43,11 +43,13 @@ color: @text;
 background: @surface;
 }
 
-#window { padding: 0 10px; color: @subtext; }
+#window { padding: 0 10px; color: @subtext; font-family: "SF Pro Display"; font-weight: 500; }
 
 #tray, #bluetooth, #network, #pulseaudio, #battery, #clock {
 padding: 0 10px;
 }
+
+#clock { font-family: "SF Pro Text"; font-weight: 500; }
 
 #battery.charging { color: @green; }
 #battery.warning:not(.charging) { color: @yellow; }

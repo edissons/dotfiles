@@ -1,7 +1,7 @@
 @import "/home/shadow/.config/theme/current.rasi"
 
 configuration {
-    font: "Inter 10";
+    font: "SF Pro Text 10";
     show-icons: true;
 }
 
@@ -32,7 +32,7 @@ textbox {
     background-color: transparent;
     text-color: @subtext;
     horizontal-align: 0.5;
-    font: "Inter 10";
+    font: "SF Pro Text 10";
 }
 
 listview {

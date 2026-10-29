@@ -1,6 +1,6 @@
-import QtQuick
-import QtQuick.Controls
-import QtQuick.Effects
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtGraphicalEffects 1.0
 
 Rectangle {
     id: root
@@ -15,7 +15,8 @@ Rectangle {
     readonly property color cBorder: dark ? "#40ffffff" : "#33000000"
     readonly property color cAccent: dark ? "#0a84ff" : "#007aff"
     readonly property color cMenu: dark ? "#e61e1e22" : "#f2f6f6f8"
-    readonly property string fam: config.font ? config.font : "Inter"
+    readonly property string fam: config.font ? config.font : "SF Pro Text"
+    readonly property string famDisplay: config.fontDisplay ? config.fontDisplay : "SF Pro Display"
     readonly property string suffix: dark ? "dark" : "light"
 
     function doLogin() {
@@ -42,13 +43,15 @@ Rectangle {
         fillMode: Image.PreserveAspectCrop
         visible: false
     }
-    MultiEffect {
+    FastBlur {
         anchors.fill: parent
         source: bg
-        blurEnabled: true
-        blurMax: 64
-        blur: 1.0
-        brightness: root.dark ? -0.15 : 0.05
+        radius: 64
+        transparentBorder: true
+    }
+    Rectangle {
+        anchors.fill: parent
+        color: root.dark ? "#40000000" : "#14ffffff"
     }
 
     // --- Reloj ---
@@ -77,7 +80,7 @@ Rectangle {
             anchors.centerIn: parent
             text: Qt.formatDate(root.now, "ddd d MMM") + "  " + Qt.formatTime(root.now, "HH:mm")
             color: root.cText
-            font.family: root.fam
+            font.family: root.famDisplay
             font.pixelSize: 14
             font.weight: Font.Medium
         }
@@ -93,7 +96,7 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatTime(root.now, "HH:mm")
             color: root.cText
-            font.family: root.fam
+            font.family: root.famDisplay
             font.pixelSize: 120
             font.weight: Font.DemiBold
         }
@@ -101,7 +104,7 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             text: Qt.formatDate(root.now, "dddd, d 'de' MMMM")
             color: root.cSub
-            font.family: root.fam
+            font.family: root.famDisplay
             font.pixelSize: 24
         }
     }
@@ -152,7 +155,7 @@ Rectangle {
                             anchors.centerIn: parent
                             text: (ureal !== "" ? ureal : uname).charAt(0).toUpperCase()
                             color: root.cText
-                            font.family: root.fam
+                            font.family: root.famDisplay
                             font.pixelSize: 42
                         }
                     }
@@ -160,7 +163,7 @@ Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
                         text: ureal !== "" ? ureal : uname
                         color: root.cText
-                        font.family: root.fam
+                        font.family: root.famDisplay
                         font.pixelSize: 20
                     }
                 }

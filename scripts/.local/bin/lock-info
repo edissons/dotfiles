@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+fullname() {
+  n=$(getent passwd "$(id -un)" | cut -d: -f5 | cut -d, -f1)
+  echo "${n:-$(id -un)}"
+}
+case "$1" in
+  date)
+    d=$(date +"%A, %-d de %B"); echo "${d^}" ;;
+  name)
+    fullname ;;
+  initial)
+    n=$(fullname); echo "${n:0:1}" | tr '[:lower:]' '[:upper:]' ;;
+  status)
+    layout=$(hyprctl getoption input:kb_layout -j 2>/dev/null | jq -r '.str // empty' | cut -d, -f1 | tr '[:lower:]' '[:upper:]')
+    bat=""
+    for b in /sys/class/power_supply/BAT*; do
+      [ -r "$b/capacity" ] || continue
+      icon="󰁹"; [ "$(cat "$b/status")" = "Charging" ] && icon="󰂄"
+      bat="$icon $(cat "$b/capacity")%"
+      break
+    done
+    wifi="󰖪"
+    nmcli -t -f TYPE,STATE device 2>/dev/null | grep -q '^wifi:connected' && wifi="󰖩"
+    printf '%s    %s    %s' "$layout" "$bat" "$wifi" ;;
+esac

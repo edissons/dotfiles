@@ -1,2 +1,9 @@
 #!/usr/bin/env bash
-pidof hyprlock >/dev/null || exec hyprlock -c "$HOME/dotfiles/hypr/.config/hypr/hyprlock.conf"
+pidof hyprlock >/dev/null && exit 0
+WALL="$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null)"
+[ -f "$WALL" ] || WALL="$HOME/Pictures/wallpapers/wall.jpg"
+STATUS="$("$HOME/.local/bin/lock-info" status 2>/dev/null | sed -E 's/^ +//')"
+RUN="$HOME/.cache/hyprlock-run.conf"
+sed -e "s|@WALL@|$WALL|" -e "s|@STATUS@|$STATUS|" \
+  "$HOME/dotfiles/hypr/.config/hypr/hyprlock.conf" > "$RUN"
+exec hyprlock -c "$RUN"
