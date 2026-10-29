@@ -3,11 +3,26 @@ set -euo pipefail
 MODE="${1:-dark}"
 SRC="$HOME/dotfiles/sddm/glass"
 DST="/usr/share/sddm/themes/glass"
-WALL="$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null || true)"
+WALL="$("$HOME/.local/bin/appearance-wall" sddm)"
 [ -f "$WALL" ] || WALL="$HOME/Pictures/wallpapers/wall.jpg"
 EXT="${WALL##*.}"
 TS="$(date +%Y%m%d-%H%M%S)"
 BACKUP="/var/backups/sddm-themes"
+AVATAR_CONF="$HOME/.config/theme/avatar.conf"
+avatar_mode=initials
+avatar_image=
+if [ -f "$AVATAR_CONF" ]; then
+  . "$AVATAR_CONF"
+fi
+
+set_theme_key() {
+  local key="$1" value="$2"
+  if grep -q "^$key=" "$DST/theme.conf"; then
+    sudo sed -i "s|^$key=.*|$key=$value|" "$DST/theme.conf"
+  else
+    printf '%s=%s\n' "$key" "$value" | sudo tee -a "$DST/theme.conf" >/dev/null
+  fi
+}
 
 if [ -d "$DST" ]; then
   sudo install -d -m 755 "$BACKUP"
@@ -17,6 +32,15 @@ sudo install -d -m 755 "$DST"
 sudo cp -r "$SRC/." "$DST/"
 sudo install -m 644 "$WALL" "$DST/background.$EXT"
 sudo sed -i "s|^background=.*|background=background.$EXT|; s|^mode=.*|mode=$MODE|" "$DST/theme.conf"
+
+if [ "$avatar_mode" = image ] && [ -f "$avatar_image" ]; then
+  sudo install -m 644 "$avatar_image" "$DST/avatar.png"
+  set_theme_key avatarMode image
+  set_theme_key avatar avatar.png
+else
+  set_theme_key avatarMode initials
+  set_theme_key avatar ""
+fi
 
 if [ -f /etc/sddm.conf ]; then
   sudo cp -a /etc/sddm.conf "/etc/sddm.conf.bak.$TS"
@@ -44,7 +68,19 @@ if ! sudo -u sddm fc-match -f '%{family}\n' "SF Pro Text" 2>/dev/null | grep -q 
   echo "Ejecuta: $HOME/.local/bin/fonts-install"
 fi
 
-echo "Tema instalado en $DST (modo $MODE, fondo $(basename "$WALL"))"
+echo "Tema instalado en $DST (modo $MODE, fondo $(basename "$WALL"), avatar $avatar_mode)"
 echo "Backup del tema anterior: $BACKUP/glass.$TS"
 echo "Selección persistente: /etc/sddm.conf -> Current=glass"
 echo "Reinicia el equipo para ver el greeter."
+
+# --- Desenfoque del fondo (ajustes) ---
+BLUR="$("$HOME/.local/bin/appearance" get sddm_blur on)"
+sudo sed -i '/^blur=/d' /usr/share/sddm/themes/glass/theme.conf
+echo "blur=$BLUR" | sudo tee -a /usr/share/sddm/themes/glass/theme.conf >/dev/null
+echo "Desenfoque del login: $BLUR"
+
+# --- Desenfoque del fondo (ajustes) ---
+BLUR="$("$HOME/.local/bin/appearance" get sddm_blur on)"
+sudo sed -i '/^blur=/d' /usr/share/sddm/themes/glass/theme.conf
+echo "blur=$BLUR" | sudo tee -a /usr/share/sddm/themes/glass/theme.conf >/dev/null
+echo "Desenfoque del login: $BLUR"

@@ -3,5 +3,8 @@
 secrets*
 theme/.config/theme/current.*
 theme/.config/theme/mode
-theme/.config/theme/current.*
-theme/.config/theme/mode
+theme/.config/theme/avatar.conf
+theme/.config/theme/avatar.png
+theme/.config/theme/avatars/custom/
+theme/.config/theme/appearance.conf
+theme/.config/theme/backgrounds/

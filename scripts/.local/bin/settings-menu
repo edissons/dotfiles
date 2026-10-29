@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+CFG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
+A="$HOME/.local/bin/appearance"
+WALLDIR="$HOME/Pictures/wallpapers"
+BGDIR="$HOME/.config/theme/backgrounds"
+
+R()     { rofi -dmenu -i -no-custom -format i -config "$CFG" "$@"; }
+term()  { kitty --title "Ajustes" -e bash -c "$1; echo; read -rp 'Pulsa Enter para cerrar '"; }
+onoff() { [ "$($A get "$1" "$2")" = on ] && echo "Activado" || echo "Desactivado"; }
+toggle(){ [ "$($A get "$1" "$2")" = on ] && $A set "$1" off || $A set "$1" on; }
+sddm_mode() {
+  local m; m=$(grep -m1 '^mode=' /usr/share/sddm/themes/glass/theme.conf 2>/dev/null | cut -d= -f2)
+  echo "${m:-dark}"
+}
+
+# Elegir fondo: "desktop", una imagen de la carpeta de wallpapers u otra imagen
+pick_bg() {
+  local files=() f sel
+  shopt -s nullglob nocaseglob
+  files=("$WALLDIR"/*.{jpg,jpeg,png,webp})
+  shopt -u nullglob nocaseglob
+  sel=$({ printf 'Igual que el escritorio\n'
+          for f in "${files[@]}"; do printf '%s\0icon\x1f%s\n' "$(basename "$f")" "$f"; done
+          printf 'Otra imagen…\n'; } \
+        | R -show-icons -p "$1" -theme-str 'element-icon { size: 48px; } listview { lines: 6; }') || return 1
+  if [ "$sel" -eq 0 ]; then
+    echo desktop
+  elif [ "$sel" -le "${#files[@]}" ]; then
+    echo "${files[$((sel-1))]}"
+  else
+    f=$(zenity --file-selection --title="Elegir imagen" \
+         --file-filter='Imágenes | *.png *.jpg *.jpeg *.webp') || return 1
+    mkdir -p "$BGDIR"; cp -f "$f" "$BGDIR/$(basename "$f")"
+    echo "$BGDIR/$(basename "$f")"
+  fi
+}
+
+while true; do
+  items=( "Fondo de escritorio"
+          "Avatar de perfil"
+          "Fondo de la pantalla de bloqueo"
+          "Fondo del inicio de sesión"
+          "Desenfoque del bloqueo: $(onoff lock_blur off)"
+          "Desenfoque del inicio de sesión: $(onoff sddm_blur on)"
+          "Módulos de la barra" )
+  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 7; }') || exit 0
+  case "$idx" in
+    0) "$HOME/.local/bin/wallpaper-select" ;;
+    1) term "$HOME/.local/bin/avatar-select" ;;
+    2) v=$(pick_bg "Fondo de bloqueo") && [ -n "$v" ] && $A set lock_bg "$v" ;;
+    3) v=$(pick_bg "Fondo del login") && [ -n "$v" ] && {
+         $A set sddm_bg "$v"; term "$HOME/.local/bin/sddm-install $(sddm_mode)"; } ;;
+    4) toggle lock_blur off ;;
+    5) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
+    6) "$HOME/.local/bin/waybar-settings" ;;
+  esac
+done

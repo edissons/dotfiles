@@ -18,6 +18,7 @@ Rectangle {
     readonly property string fam: config.font ? config.font : "SF Pro Text"
     readonly property string famDisplay: config.fontDisplay ? config.fontDisplay : "SF Pro Display"
     readonly property string suffix: dark ? "dark" : "light"
+    readonly property bool hasAvatar: config.avatarMode === "image" && config.avatar
 
     function doLogin() {
         if (userList.currentItem && password.text.length > 0)
@@ -46,7 +47,7 @@ Rectangle {
     FastBlur {
         anchors.fill: parent
         source: bg
-        radius: 64
+        radius: config.blur === "off" ? 0 : 64
         transparentBorder: true
     }
     Rectangle {
@@ -146,6 +147,7 @@ Rectangle {
                     anchors.centerIn: parent
                     spacing: 10
                     Rectangle {
+                        id: avatarCircle
                         anchors.horizontalCenter: parent.horizontalCenter
                         width: 92; height: 92; radius: 46
                         color: root.cGlass
@@ -153,10 +155,28 @@ Rectangle {
                         border.color: root.cBorder
                         Text {
                             anchors.centerIn: parent
+                            visible: !root.hasAvatar
                             text: (ureal !== "" ? ureal : uname).charAt(0).toUpperCase()
                             color: root.cText
                             font.family: root.famDisplay
                             font.pixelSize: 42
+                        }
+                        Image {
+                            id: avatarImage
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            visible: root.hasAvatar
+                            source: root.hasAvatar ? config.avatar : ""
+                            fillMode: Image.PreserveAspectCrop
+                            layer.enabled: root.hasAvatar
+                            layer.effect: OpacityMask {
+                                maskSource: Rectangle {
+                                    width: avatarImage.width
+                                    height: avatarImage.height
+                                    radius: width / 2
+                                    color: "white"
+                                }
+                            }
                         }
                     }
                     Text {

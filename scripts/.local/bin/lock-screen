@@ -1,9 +1,76 @@
 #!/usr/bin/env bash
 pidof hyprlock >/dev/null && exit 0
-WALL="$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null)"
+WALL="$("$HOME/.local/bin/appearance-wall" lock)"
 [ -f "$WALL" ] || WALL="$HOME/Pictures/wallpapers/wall.jpg"
 STATUS="$("$HOME/.local/bin/lock-info" status 2>/dev/null | sed -E 's/^ +//')"
+INITIAL="$("$HOME/.local/bin/lock-info" initial 2>/dev/null)"
+[ -n "$INITIAL" ] || INITIAL="?"
+
+avatar_mode=initials
+avatar_image=
+[ -f "$HOME/.config/theme/avatar.conf" ] && . "$HOME/.config/theme/avatar.conf"
+
+BLOCK="$(mktemp)"
+trap 'rm -f "$BLOCK"' EXIT
+if [ "$avatar_mode" = image ] && [ -f "$avatar_image" ]; then
+  cat > "$BLOCK" <<EOF
+    image {
+        monitor =
+        path = $avatar_image
+        size = 80
+        rounding = 40
+        border_size = 2
+        border_color = \$border_active
+        position = 0, 150
+        halign = center
+        valign = bottom
+    }
+EOF
+else
+  cat > "$BLOCK" <<EOF
+    shape {
+        monitor =
+        size = 80, 80
+        color = \$bg
+        rounding = -1
+        border_size = 1
+        border_color = \$border_active
+        position = 0, 150
+        halign = center
+        valign = bottom
+    }
+
+    label {
+        monitor =
+        text = $INITIAL
+        color = \$text
+        font_size = 34
+        font_family = \$font_display
+        position = 0, 166
+        halign = center
+        valign = bottom
+    }
+EOF
+fi
+
 RUN="$HOME/.cache/hyprlock-run.conf"
 sed -e "s|@WALL@|$WALL|" -e "s|@STATUS@|$STATUS|" \
+  -e "/@AVATAR_BLOCK@/r $BLOCK" -e "/@AVATAR_BLOCK@/d" \
   "$HOME/dotfiles/hypr/.config/hypr/hyprlock.conf" > "$RUN"
+rm -f "$BLOCK"
+trap - EXIT
+# --- Desenfoque del fondo (ajustes) ---
+PASSES=0
+[ "$("$HOME/.local/bin/appearance" get lock_blur off)" = on ] && PASSES=3
+sed -i -E \
+  -e '/^background \{/,/^\}/{/^ *blur_(passes|size) *=/d}' \
+  -e '/^background \{/a\    blur_size = 7' \
+  -e "/^background \\{/a\\    blur_passes = $PASSES" "$RUN"
+# --- Desenfoque del fondo (ajustes) ---
+PASSES=0
+[ "$("$HOME/.local/bin/appearance" get lock_blur off)" = on ] && PASSES=3
+sed -i -E \
+  -e '/^background \{/,/^\}/{/^ *blur_(passes|size) *=/d}' \
+  -e '/^background \{/a\    blur_size = 7' \
+  -e "/^background \\{/a\\    blur_passes = $PASSES" "$RUN"
 exec hyprlock -c "$RUN"

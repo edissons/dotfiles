@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+THEME="$HOME/.config/theme"
+AVATAR_CONF="$THEME/avatar.conf"
+AVATAR_OUT="$THEME/avatar.png"
+AVATAR_DIR="$THEME/avatars"
+ROFI_CONFIG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
+SYNC=1
+
+if [ "${1:-}" = "--no-sddm" ]; then
+  SYNC=0
+  shift
+fi
+
+sync_sddm() {
+  local mode
+  mode="$(cat "$THEME/mode" 2>/dev/null || echo dark)"
+  if [ "$SYNC" = 1 ]; then
+    "$HOME/.local/bin/sddm-install" "$mode" || true
+  else
+    echo "Ejecuta ~/.local/bin/sddm-install $mode para aplicar en SDDM."
+  fi
+}
+
+set_initials() {
+  printf 'avatar_mode=initials\navatar_image=\n' > "$AVATAR_CONF"
+  echo "Avatar: iniciales del usuario"
+  sync_sddm
+}
+
+set_image() {
+  local src="$1" tmp
+  [ -f "$src" ] || { echo "No existe la imagen: $src"; exit 1; }
+  command -v magick >/dev/null || { echo "Falta ImageMagick (magick)"; exit 1; }
+  mkdir -p "$AVATAR_DIR"
+  tmp="$(mktemp --suffix=.png)"
+  if ! magick "$src" -auto-orient -resize '512x512^' -gravity center -extent 512x512 -strip "$tmp"; then
+    rm -f "$tmp"
+    echo "No se pudo procesar la imagen"
+    exit 1
+  fi
+  mv "$tmp" "$AVATAR_OUT"
+  printf 'avatar_mode=image\navatar_image=%s\n' "$AVATAR_OUT" > "$AVATAR_CONF"
+  echo "Avatar: $(basename "$src")"
+  sync_sddm
+}
+
+choose_file() {
+  local file
+  if command -v zenity >/dev/null; then
+    file="$(zenity --file-selection --title="Elegir imagen de perfil" \
+      --file-filter='Imágenes | *.png *.jpg *.jpeg *.webp')" || exit 0
+  elif command -v kdialog >/dev/null; then
+    file="$(kdialog --getopenfilename "$HOME" 'Imágenes | *.png *.jpg *.jpeg *.webp')" || exit 0
+  else
+    read -r -p "Ruta de la imagen: " file
+  fi
+  set_image "$file"
+}
+
+menu() {
+  local choice
+  local -a choices=("Iniciales")
+  local -a files=()
+  mkdir -p "$AVATAR_DIR/custom"
+  mapfile -t files < <(find "$AVATAR_DIR" -maxdepth 2 -type f \
+    \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) | sort)
+  for f in "${files[@]}"; do
+    choices+=("$(basename "$f")")
+  done
+  choices+=("Imagen personalizada…")
+
+  choice="$(printf '%s\n' "${choices[@]}" | rofi -dmenu -i -p "Avatar" -config "$ROFI_CONFIG")" || exit 0
+  case "$choice" in
+    Iniciales) set_initials ;;
+    "Imagen personalizada…") choose_file ;;
+    "") exit 0 ;;
+    *)
+      for f in "${files[@]}"; do
+        if [ "$(basename "$f")" = "$choice" ]; then
+          set_image "$f"
+          exit 0
+        fi
+      done
+      echo "Avatar no encontrado: $choice"
+      exit 1
+      ;;
+  esac
+}
+
+case "${1:-}" in
+  initials)
+    set_initials
+    ;;
+  set)
+    [ -n "${2:-}" ] || { echo "Uso: avatar-select set /ruta/imagen"; exit 2; }
+    set_image "$2"
+    ;;
+  "")
+    menu
+    ;;
+  *)
+    echo "Uso: avatar-select [--no-sddm] [initials|set /ruta/imagen]"
+    exit 2
+    ;;
+esac

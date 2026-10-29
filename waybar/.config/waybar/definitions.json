@@ -148,7 +148,7 @@
   "custom/settings": {
     "format": "󰒓",
     "tooltip": false,
-    "on-click": "$HOME/.local/bin/waybar-settings"
+    "on-click": "$HOME/.local/bin/settings-menu"
   },
   "custom/power": {
     "format": "󰐥",

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Uso: appearance get CLAVE [defecto] | appearance set CLAVE VALOR
+F="$HOME/.config/theme/appearance.conf"
+touch "$F"
+case "$1" in
+  get) v=$(grep -m1 "^$2=" "$F" | cut -d= -f2-); echo "${v:-$3}" ;;
+  set) tmp=$(mktemp); grep -v "^$2=" "$F" > "$tmp"; echo "$2=$3" >> "$tmp"; mv "$tmp" "$F" ;;
+esac

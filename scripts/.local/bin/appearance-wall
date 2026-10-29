@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Uso: appearance-wall lock|sddm  -> imprime la ruta del fondo que corresponde
+v=$("$HOME/.local/bin/appearance" get "${1}_bg" desktop)
+if [ "$v" = desktop ] || [ ! -f "$v" ]; then
+  v=$(cat "$HOME/.cache/current-wallpaper" 2>/dev/null)
+  [ -f "$v" ] || v="$HOME/Pictures/wallpapers/wall.jpg"
+fi
+echo "$v"
