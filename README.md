@@ -4,6 +4,10 @@ Configuración personal de Arch Linux + Hyprland con estética macOS/Liquid Glas
 Incluye Hyprland, Hyprlock, Hypridle, Waybar, SwayNC, Rofi, nwg-dock-hyprland,
 Kitty, tema SDDM propio y un sistema de tema claro/oscuro compartido.
 
+Casi toda la personalización (fondo de escritorio, avatar, fondo y desenfoque del
+bloqueo y del login, módulos de la barra) se hace desde un único menú de
+**Ajustes**: botón de engranaje de Waybar o `SUPER+,`.
+
 ## Arquitectura
 
 La sesión activa usa la configuración del repo, no `~/.config/hypr`:
@@ -21,6 +25,8 @@ Archivos y rutas activas:
 - `~/dotfiles/hypr/.config/hypr/hypridle.conf`: bloqueo y suspensión.
 - `~/dotfiles/hypr/.config/hypr/hyprlock.conf`: lockscreen.
 - `~/.config/theme -> ~/dotfiles/theme/.config/theme`: colores y modo.
+- `~/.config/theme/appearance.conf`: ajustes de apariencia (fondos y desenfoque);
+  ignorado por Git.
 - `~/.config/nwg-dock-hyprland -> ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland`.
 - `~/.local/bin/* -> ~/dotfiles/scripts/.local/bin/*`: scripts.
 - Waybar usa `~/.cache/waybar/config.json` generado por `waybar-build` y
@@ -36,15 +42,27 @@ activa. No editar allí esperando cambios en la sesión.
 ```text
 hyprland hyprlock hypridle waybar swaync nwg-dock-hyprland
 rofi kitty sddm qt5-quickcontrols2 qt5-graphicaleffects
+imagemagick zenity
 jq networkmanager brightnessctl pamixer playerctl grim slurp
 wl-clipboard cliphist swaybg
+hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
+kvantum kvantum-qt5 qt5ct qt6ct
+network-manager-applet blueman pacman-contrib libnotify
 ```
 
 Fuentes:
 
 - `SF Pro Text`, `SF Pro Display`, `SF Pro Rounded` y `SF Pro`.
 - `JetBrainsMono Nerd Font` y `JetBrainsMono Nerd Font Mono`.
-- `Inter` sigue instalada como respaldo, pero ya no es la fuente principal.
+- `Inter` sigue instalada como respaldo, pero ya no se referencia en las
+  configuraciones.
+
+Criterio tipográfico:
+
+- `SF Pro Text` es la fuente general de interfaz.
+- `SF Pro Display` se usa en títulos, reloj, fecha grande y nombres.
+- `JetBrainsMono Nerd Font Mono` queda solo para terminal, campos
+  monoespaciados y glifos Nerd (wifi, batería, iconos).
 
 SF Pro no se versiona en el repo. La copia usada está en:
 
@@ -54,7 +72,7 @@ SF Pro no se versiona en el repo. La copia usada está en:
 
 ## Instalación de symlinks
 
-Si faltan en un equipo nuevo:
+Si faltan en un equipo nuevo (también al añadir scripts nuevos):
 
 ```bash
 ln -sfn ~/dotfiles/theme/.config/theme ~/.config/theme
@@ -62,6 +80,55 @@ ln -sfn ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland ~/.config/nwg-doc
 for f in ~/dotfiles/scripts/.local/bin/*; do
   ln -sfn "$f" "$HOME/.local/bin/$(basename "$f")"
 done
+```
+
+## Ajustes de apariencia
+
+El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+,`
+(`scripts/.local/bin/settings-menu`). Entradas:
+
+| Entrada | Qué hace |
+|---|---|
+| Fondo de escritorio | Abre `wallpaper-select` (también `SUPER+SHIFT+W`). |
+| Avatar de perfil | Abre `avatar-select` en una terminal (puede pedir `sudo`). |
+| Fondo de la pantalla de bloqueo | Igual que el escritorio, una imagen de la carpeta de wallpapers u otra imagen. |
+| Fondo del inicio de sesión | Igual, y sincroniza SDDM con `sddm-install` (pide `sudo`). |
+| Desenfoque del bloqueo | Activa o desactiva el desenfoque del fondo de hyprlock. |
+| Desenfoque del inicio de sesión | Activa o desactiva el desenfoque del fondo de SDDM y sincroniza (pide `sudo`). |
+| Módulos de la barra | Abre `waybar-settings`: activar, desactivar y mover módulos. |
+
+Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) con
+`appearance get|set`:
+
+| Clave | Valores | Por defecto |
+|---|---|---|
+| `lock_bg` | `desktop` o ruta de una imagen | `desktop` |
+| `lock_blur` | `on` / `off` | `off` |
+| `sddm_bg` | `desktop` o ruta de una imagen | `desktop` |
+| `sddm_blur` | `on` / `off` | `on` |
+
+Con `desktop`, el bloqueo usa siempre el wallpaper actual
+(`~/.cache/current-wallpaper`). SDDM usa el wallpaper que había al ejecutar
+`sddm-install`, así que se actualiza al sincronizar.
+
+Las imágenes elegidas con «Otra imagen…» se copian a
+`~/.config/theme/backgrounds/` (ignorada por Git), para que el ajuste no se rompa
+si se borra el original.
+
+Scripts implicados:
+
+- `appearance`: lee y escribe `appearance.conf`.
+- `appearance-wall lock|sddm`: imprime la ruta del fondo que corresponde, con
+  respaldo a `~/Pictures/wallpapers/wall.jpg`.
+- `lock-screen`: usa `appearance-wall lock` y aplica `lock_blur`.
+- `sddm-install`: usa `appearance-wall sddm` y escribe `blur=` en `theme.conf`.
+
+Desde la terminal:
+
+```bash
+~/.local/bin/appearance set lock_blur on
+~/.local/bin/appearance get lock_blur off
+~/.local/bin/appearance-wall lock
 ```
 
 ## Fuentes
@@ -124,15 +191,16 @@ son válidos.
 
 ## Lockscreen
 
-El bloqueo se lanza con:
+El bloqueo se lanza con (`SUPER+L`, el panel de energía o `hypridle`):
 
 ```bash
 ~/.local/bin/lock-screen
 ```
 
 `lock-screen` genera `~/.cache/hyprlock-run.conf` sustituyendo `@WALL@` por el
-fondo actual y `@STATUS@` por el estado de `lock-info`, y luego ejecuta
-`hyprlock` con ese archivo. No editar el archivo de caché; editar
+fondo elegido (`appearance-wall lock`), `@STATUS@` por el estado de `lock-info` y
+`@AVATAR_BLOCK@` por el bloque del avatar, y luego ejecuta `hyprlock` con ese
+archivo. No editar el archivo de caché; editar
 `hypr/.config/hypr/hyprlock.conf` y volver a bloquear.
 
 Cambios realizados:
@@ -152,8 +220,15 @@ Cambios realizados:
 - El lockscreen sigue el tema claro/oscuro con variables de `colors.conf`:
   `$text`, `$subtext`, `$bg`, `$border_active`, `$accent`, `$red`, `$shadow` y
   `$lock_bg_brightness`.
-- El fondo es el wallpaper actual (`@WALL@`), no una captura del escritorio.
-  `blur_passes` queda en 0 para evitar recapturas y artefactos.
+- El fondo es una imagen (`@WALL@`), no una captura del escritorio. Por defecto
+  es el wallpaper actual, o el que se haya elegido en Ajustes (`lock_bg`).
+- El desenfoque se controla desde Ajustes (`lock_blur`). `lock-screen` borra las
+  líneas `blur_passes`/`blur_size` del bloque `background` del archivo generado
+  y escribe `blur_passes = 0` (desactivado, valor por defecto) o `blur_passes = 3`
+  con `blur_size = 7` (activado). La plantilla no se toca.
+- El avatar se genera en `@AVATAR_BLOCK@`: imagen de 80 px si
+  `avatar_mode=image`, o círculo con inicial si no hay imagen válida.
+  La imagen se toma de `~/.config/theme/avatar.conf`/`avatar.png`.
 
 Variables añadidas a `theme/.config/theme/{dark,light}/colors.conf`:
 
@@ -170,6 +245,68 @@ $red = rgba(ff3b30ff)        # light
 ```
 
 `lock-info` se versiona con el repo y es requerido por `lock-screen`.
+
+## Avatar de perfil
+
+El avatar se comparte entre el lockscreen y SDDM. Hay dos modos:
+
+- `initials`: círculo con la inicial del nombre del usuario.
+- `image`: imagen circular, recortada y normalizada a 512x512.
+
+Avatares base versionados en:
+
+```text
+theme/.config/theme/avatars/
+  aurora.png
+  forest.png
+  midnight.png
+  sunset.png
+```
+
+Selección interactiva (también desde Ajustes, «Avatar de perfil»):
+
+```bash
+~/.local/bin/avatar-select
+```
+
+El menú ofrece `Iniciales`, los avatares base, los avatares propios de
+`avatars/custom/` (con el sufijo `(propio)`) e `Imagen personalizada…`. Cada
+entrada se resuelve a su ruta completa, así que un nombre repetido en `avatars/` y
+`custom/` no se confunde. La imagen personalizada se elige con Zenity y se recorta
+al centro con ImageMagick.
+
+También se puede usar sin menú:
+
+```bash
+~/.local/bin/avatar-select initials
+~/.local/bin/avatar-select set ~/Pictures/mi-foto.jpg
+~/.local/bin/avatar-select --no-sddm set ~/Pictures/mi-foto.jpg
+```
+
+La selección se guarda en `~/.config/theme/avatar.conf` y la copia de trabajo
+en `~/.config/theme/avatar.png`. Ambos están ignorados por Git:
+
+```text
+avatar_mode=image
+avatar_image=/home/shadow/.config/theme/avatar.png
+```
+
+El lockscreen lee ese archivo al bloquear. Para SDDM, `avatar-select` intenta
+sincronizar con `sddm-install` (pide `sudo`); si se usa `--no-sddm`, hay que
+ejecutar:
+
+```bash
+~/.local/bin/sddm-install dark
+```
+
+`sddm-install` copia `avatar.png` al tema, escribe `avatarMode`/`avatar` en
+`theme.conf` y conserva el modo `initials` si no hay imagen válida. El avatar
+no se versiona; solo se versionan las imágenes base.
+
+Para añadir una imagen propia al menú sin versionarla, guardarla en
+`~/.config/theme/avatars/custom/` (ignorada por Git). Los avatares base de
+`avatars/` sí se versionan. La copia de trabajo seguirá siendo
+`~/.config/theme/avatar.png` (ignorada).
 
 ## SDDM
 
@@ -199,8 +336,10 @@ carga de `sddm-astronaut-theme/Themes/cyberpunk.conf`.
 - Hace backup del tema instalado en
   `/var/backups/sddm-themes/glass.<fecha>`.
 - Copia el tema del repo sin `rm -rf`.
-- Copia el wallpaper actual como `background.<ext>`.
-- Actualiza `background` y `mode` en `theme.conf`.
+- Copia el fondo elegido (`appearance-wall sddm`) como `background.<ext>`.
+- Copia el avatar seleccionado como `avatar.png`, si existe.
+- Actualiza `background`, `mode`, `avatarMode`, `avatar` y `blur` en
+  `theme.conf`. `blur` sale de `sddm_blur` (`on` por defecto).
 - Hace backup de `/etc/sddm.conf` y fija `Current=glass`.
 - Hace backup de `/etc/sddm.conf.d/the_hyde_project.conf` y cambia su
   `Current=Candy` por `Current=glass`.
@@ -222,6 +361,16 @@ journalctl -u sddm -b --no-pager | grep -Ei 'theme|qml|error|warning' | tail -50
 Se espera una línea de carga de
 `/usr/share/sddm/themes/glass/theme.conf`.
 
+### Claves de `theme.conf`
+
+- `background`: imagen de fondo, copiada junto al tema.
+- `mode`: `dark` o `light`; el menú del greeter («?») permite cambiarlo solo para
+  esa sesión.
+- `font` y `fontDisplay`: `SF Pro Text` y `SF Pro Display`.
+- `clock`: `bar` (píldora arriba a la derecha) o `big` (reloj grande).
+- `avatarMode` y `avatar`: `initials` o `image`, y la imagen.
+- `blur`: `on` u `off`. Si falta, el fondo se desenfoca.
+
 ### Fuentes del tema
 
 - `sddm/glass/theme.conf`:
@@ -233,10 +382,13 @@ Se espera una línea de carga de
   - `root.famDisplay` usa `SF Pro Display` para reloj, fecha grande, nombre e
     inicial.
   - Si `config.fontDisplay` no está expuesto, el fallback es `SF Pro Display`.
+  - `hasAvatar` muestra `config.avatar` en un círculo con `OpacityMask` cuando
+    `avatarMode=image`; si no, muestra la inicial.
   - Es compatible con Qt5: `import QtQuick 2.15`,
     `import QtQuick.Controls 2.15` e `import QtGraphicalEffects 1.0`.
   - El fondo usa `FastBlur` de QtGraphicalEffects; no usa `QtQuick.Effects`
-    ni `MultiEffect`, que son Qt6.
+    ni `MultiEffect`, que son Qt6. Su `radius` es 0 si `config.blur` vale `off`
+    y 64 en cualquier otro caso.
 
 El paquete `sddm 0.21.0-8` de CachyOS lanza `/usr/bin/sddm-greeter`, que está
 enlazado contra Qt5, no `sddm-greeter-qt6`. Por eso el tema debe usar imports
@@ -260,8 +412,8 @@ sddm-greeter --test-mode --theme "$TMP"
 ```
 
 El test mode corre como el usuario actual; no demuestra por sí solo que el
-usuario `sddm` vea SF Pro. Para eso está `fonts-install` y la verificación con
-`sudo -u sddm fc-match`.
+usuario `sddm` vea SF Pro ni lea el avatar. Para eso está `fonts-install` y la
+verificación con `sudo -u sddm`.
 
 Si el tema ya estaba instalado antes de corregir el QML, volver a copiarlo y
 reiniciar:
@@ -292,6 +444,11 @@ La configuración se genera con:
 `~/.cache/waybar/config.json`. `modules.json` desactiva `temperature`,
 `bluetooth` y `network`.
 
+El botón de engranaje (`custom/settings`) abre `settings-menu`. El módulo
+`custom/wallpaper` ya no está en la barra: el cambio de fondo está en Ajustes y
+en `SUPER+SHIFT+W`. La entrada «Módulos de la barra» de Ajustes abre
+`waybar-settings`, que activa, desactiva y mueve módulos entre zonas.
+
 ## SwayNC
 
 Archivo: `swaync/.config/swaync/style.css`.
@@ -313,9 +470,12 @@ Archivos: `rofi/.config/rofi/config.rasi` y `power.rasi`.
 
 - Lanzador: `font: "SF Pro Text 13"`.
 - Menú de energía: `font: "SF Pro Text 10"` y `textbox` con el mismo tamaño.
+- `power-menu` usa `SF Pro Text 13` en su `theme-str` de confirmación.
 - El `icon-theme` sigue fijado a `WhiteSur-dark`; no se cambió en esta fase.
   Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
+- `settings-menu`, `avatar-select`, `wallpaper-select` y `waybar-settings`
+  reutilizan `config.rasi`.
 
 Probar:
 
@@ -361,14 +521,23 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - Qt5ct/Qt6ct usan `Tela-circle-dracula` como icon theme.
 - `theme-toggle` no actualiza el tema/iconos de GTK4, solo `fonts-apply` toca su
   fuente.
+- La configuración de Hyprland sigue en sintaxis hyprlang (`.conf`); está
+  pendiente migrarla a Lua antes de que se retire el soporte.
 
 ## Scripts
 
+- `scripts/.local/bin/settings-menu`: menú de Ajustes (engranaje de Waybar o
+  `SUPER+,`).
+- `scripts/.local/bin/appearance`: lee y escribe `~/.config/theme/appearance.conf`.
+- `scripts/.local/bin/appearance-wall`: resuelve el fondo de bloqueo o de SDDM.
 - `scripts/.local/bin/lock-screen`: genera el config de hyprlock y bloquea.
 - `scripts/.local/bin/lock-info`: fecha, nombre, inicial y estado.
+- `scripts/.local/bin/avatar-select`: elige iniciales, avatar base, avatar propio
+  o imagen personalizada y sincroniza SDDM.
 - `scripts/.local/bin/fonts-apply`: fuentes de usuario (GTK/Qt/gsettings).
 - `scripts/.local/bin/fonts-install`: SF Pro system-wide para SDDM.
-- `scripts/.local/bin/sddm-install`: instala el tema, fondo y selección glass.
+- `scripts/.local/bin/sddm-install`: instala el tema, fondo, avatar y desenfoque
+  de glass.
 - `scripts/.local/bin/waybar-build` / `waybar-restart`: Waybar.
 - `scripts/.local/bin/dock-restart`: nwg-dock.
 - `scripts/.local/bin/theme-toggle`: tema claro/oscuro.
@@ -408,6 +577,32 @@ Lockscreen:
 Comprobar que el icono wifi se ve completo y que el campo de contraseña
 funciona. Desbloquear con la contraseña normal.
 
+Ajustes de apariencia y desenfoque del bloqueo:
+
+```bash
+~/.local/bin/appearance set lock_blur on
+~/.local/bin/lock-screen            # fondo desenfocado
+~/.local/bin/appearance set lock_blur off
+cat ~/.config/theme/appearance.conf
+~/.local/bin/appearance-wall lock
+```
+
+Avatar:
+
+```bash
+~/.local/bin/avatar-select --no-sddm initials
+~/.local/bin/avatar-select --no-sddm set ~/dotfiles/theme/.config/theme/avatars/aurora.png
+cat ~/.config/theme/avatar.conf
+~/.local/bin/lock-screen
+```
+
+Después, sincronizar SDDM con `~/.local/bin/sddm-install dark` y comprobar:
+
+```bash
+grep -n '^avatar\|^blur\|^background' /usr/share/sddm/themes/glass/theme.conf
+sudo -u sddm test -r /usr/share/sddm/themes/glass/avatar.png && echo "sddm puede leer el avatar"
+```
+
 Waybar, SwayNC y dock:
 
 ```bash
@@ -419,13 +614,27 @@ swaync-client -rs
 SDDM después de reiniciar:
 
 ```bash
-grep -n '^font' /usr/share/sddm/themes/glass/theme.conf
+grep -n '^font\|^avatar\|^blur' /usr/share/sddm/themes/glass/theme.conf
 grep -n '^import' /usr/share/sddm/themes/glass/Main.qml
 journalctl -u sddm -b --no-pager | grep -Ei 'theme|qml|error|warning' | tail -50
 ```
 
-Se esperan `font=SF Pro Text`, `fontDisplay=SF Pro Display` e imports con
-versión (`QtQuick 2.15`, `QtQuick.Controls 2.15`, `QtGraphicalEffects 1.0`).
+Se esperan `font=SF Pro Text`, `fontDisplay=SF Pro Display`, `blur=on` u `off` e
+imports con versión (`QtQuick 2.15`, `QtQuick.Controls 2.15`,
+`QtGraphicalEffects 1.0`).
+
+Antes de commitear:
+
+```bash
+for f in scripts/.local/bin/*; do
+  grep -q '^#!.*bash' "$f" && { bash -n "$f" || echo "FALLO: $f"; }
+done
+git diff --check
+git status --short
+git check-ignore -v theme/.config/theme/appearance.conf theme/.config/theme/avatar.conf \
+  theme/.config/theme/avatar.png theme/.config/theme/backgrounds/x.jpg \
+  theme/.config/theme/avatars/custom/x.png
+```
 
 ## Rollback
 
@@ -473,3 +682,7 @@ cambiar `Current=sddm-astronaut-theme` en `/etc/sddm.conf` con un backup previo.
 Las fuentes system-wide de `/usr/local/share/fonts/sf-pro` no se borran
 automáticamente; si se decide revertir, eliminarlas manualmente y ejecutar
 `sudo fc-cache -f`.
+
+Para deshacer los ajustes de apariencia, borrar `~/.config/theme/appearance.conf`:
+el bloqueo vuelve al wallpaper actual sin desenfoque y SDDM al wallpaper actual con
+desenfoque tras ejecutar `sddm-install`.
