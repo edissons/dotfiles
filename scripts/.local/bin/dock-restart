@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
+A="$HOME/.local/bin/appearance"
+autohide=$("$A" get dock_autohide on 2>/dev/null || echo on)
+args=(-i 44 -l top -w 0 -hd 100 -lp start -mb 8)
+[ "$autohide" = on ] && args=(-d "${args[@]}")
+
 pkill -x nwg-dock-hyprla
 sleep 0.3
-setsid nohup nwg-dock-hyprland -d -i 44 -l top -w 0 -hd 100 -hd 300 -hd 300 -hd 100 -hd 100 -hd 100 -hd 300 -hd 300 -hd 300 -hd 300 -hd 300 -hd 300 -lp start -mb 8 \
+setsid nohup nwg-dock-hyprland "${args[@]}" \
   -c "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi" \
   >/tmp/dock.log 2>&1 &

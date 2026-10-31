@@ -2,8 +2,9 @@
 @define-color surface rgba(255,255,255,0.55);
 @define-color border rgba(0,0,0,0.10);
 @define-color text #1d1d1f;
-@define-color subtext #6e6e73;
+@define-color subtext #636366;
 @define-color accent #007aff;
-@define-color red #ff3b30;
-@define-color green #34c759;
-@define-color yellow #ffcc00;
+@define-color on-accent #000000;
+@define-color red #d70015;
+@define-color green #1a7f37;
+@define-color yellow #8a6500;

@@ -14,16 +14,18 @@ La sesión activa usa la configuración del repo, no `~/.config/hypr`:
 
 ```text
 /usr/local/bin/hyprland-glass
-  -> start-hyprland -- -c ~/dotfiles/hypr/.config/hypr/session.conf
+  -> start-hyprland -- -c ~/dotfiles/hypr/.config/hypr/session.lua
 ```
 
 Archivos y rutas activas:
 
-- `~/dotfiles/hypr/.config/hypr/session.conf`: entrada real de la sesión.
-- `~/dotfiles/hypr/.config/hypr/hyprland.conf`: configuración base.
-- `~/dotfiles/hypr/.config/hypr/daily.conf`: atajos y servicios de sesión.
-- `~/dotfiles/hypr/.config/hypr/hypridle.conf`: bloqueo y suspensión.
-- `~/dotfiles/hypr/.config/hypr/hyprlock.conf`: lockscreen.
+- `~/dotfiles/hypr/.config/hypr/session.lua`: entrada real de la sesión.
+- `~/dotfiles/hypr/.config/hypr/hyprland.lua`: configuración base.
+- `~/dotfiles/hypr/.config/hypr/daily.lua`: atajos y servicios de sesión.
+- `~/dotfiles/hypr/.config/hypr/test.lua`: sesión de prueba aislada.
+- `~/dotfiles/hypr/.config/hypr/legacy/`: `.conf` antiguos archivados; no se cargan.
+- `~/dotfiles/hypr/.config/hypr/hypridle.conf`: bloqueo y suspensión (hyprlang).
+- `~/dotfiles/hypr/.config/hypr/hyprlock.conf`: lockscreen (hyprlang).
 - `~/.config/theme -> ~/dotfiles/theme/.config/theme`: colores y modo.
 - `~/.config/theme/appearance.conf`: ajustes de apariencia (fondos y desenfoque);
   ignorado por Git.
@@ -37,6 +39,29 @@ Archivos y rutas activas:
 `~/.config/hypr` contiene configuraciones HyDE antiguas y no es la configuración
 activa. No editar allí esperando cambios en la sesión.
 
+## Migración a Lua
+
+Hyprland 0.57 ya no lee `.conf`; la sesión usa Lua. La conversión se hace con
+`hyprconf2lua >= 1.7.0` (v1.8.1 probada) y el script del repo:
+
+```bash
+cd ~/dotfiles
+./hypr-lua-migrate.sh --force          # migra e instala el lanzador
+./hypr-lua-migrate.sh --force --no-install  # sin tocar /usr/local/bin
+```
+
+El script hace copia en `~/.dotfiles-backup/hypr-lua-<fecha>/`, convierte
+`hyprland` y `daily`, valida con `luac`, archiva los `.conf` en
+`hypr/.config/hypr/legacy/` y deja `hypridle.conf`/`hyprlock.conf` intactos.
+Después valida la sesión sin iniciarla:
+
+```bash
+Hyprland --verify-config -c ~/dotfiles/hypr/.config/hypr/session.lua
+```
+
+Para probar de verdad, usar otro TTY (`Ctrl+Alt+F3`) y ejecutar `hypr-test`;
+dentro, `hyprctl configerrors` debe estar vacío.
+
 ## Dependencias principales
 
 ```text
@@ -49,6 +74,8 @@ hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
 kvantum kvantum-qt5 qt5ct qt6ct
 network-manager-applet blueman pacman-contrib libnotify
 ```
+
+Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon local).
 
 Fuentes:
 
@@ -96,6 +123,9 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Desenfoque del bloqueo | Activa o desactiva el desenfoque del fondo de hyprlock. |
 | Desenfoque del inicio de sesión | Activa o desactiva el desenfoque del fondo de SDDM y sincroniza (pide `sudo`). |
 | Módulos de la barra | Abre `waybar-settings`: activar, desactivar y mover módulos. |
+| Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. |
+| Ocultar dock automáticamente | Activa o desactiva `-d` y reinicia nwg-dock. |
+| Ocultar barra automáticamente | Activa o desactiva el daemon `bar-autohide` y reinicia Waybar. |
 
 Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) con
 `appearance get|set`:
@@ -106,6 +136,8 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 | `lock_blur` | `on` / `off` | `off` |
 | `sddm_bg` | `desktop` o ruta de una imagen | `desktop` |
 | `sddm_blur` | `on` / `off` | `on` |
+| `dock_autohide` | `on` / `off` | `on` |
+| `bar_autohide` | `on` / `off` | `off` |
 
 Con `desktop`, el bloqueo usa siempre el wallpaper actual
 (`~/.cache/current-wallpaper`). SDDM usa el wallpaper que había al ejecutar
@@ -120,6 +152,9 @@ Scripts implicados:
 - `appearance`: lee y escribe `appearance.conf`.
 - `appearance-wall lock|sddm`: imprime la ruta del fondo que corresponde, con
   respaldo a `~/Pictures/wallpapers/wall.jpg`.
+- `bar-autohide`: oculta Waybar cuando el cursor baja del borde superior y la
+  muestra al volver a `y <= 4`; se controla con `bar_autohide`.
+- `dock-settings`: añade o quita clases de `~/.cache/nwg-dock-pinned`.
 - `lock-screen`: usa `appearance-wall lock` y aplica `lock_blur`.
 - `sddm-install`: usa `appearance-wall sddm` y escribe `blur=` en `theme.conf`.
 
@@ -241,7 +276,7 @@ $lock_bg_brightness = 1.0    # light
 $shadow = rgba(00000066)     # dark
 $shadow = rgba(00000033)     # light
 $red = rgba(ff453aff)        # dark
-$red = rgba(ff3b30ff)        # light
+$red = rgba(d70015ff)        # light
 ```
 
 `lock-info` se versiona con el repo y es requerido por `lock-screen`.
@@ -429,9 +464,20 @@ Archivo: `waybar/.config/waybar/style.css`.
 
 - Fuente global: `"SF Pro Text", "JetBrainsMono Nerd Font Mono"`.
 - `#clock`: `SF Pro Text`, peso 500.
-- `#window`: `SF Pro Display`, peso 500.
+- `#window`: `SF Pro Text`, peso 500.
+- `group/workspaces` agrupa `custom/ws1`…`custom/ws4`: cada workspace muestra
+  un único glifo de su ventana activa, o su número si está vacío, con píldora
+  de ancho fijo. Los módulos custom solo pueden usar glifos Nerd Font, no
+  iconos GTK; el mapa de clases está en
+  `scripts/.local/bin/workspace-pill`. Click enfoca el workspace y, si ya está
+  activo, cicla sus ventanas. `waybar-restart` inicia `workspace-pill daemon`,
+  que actualiza los cuatro módulos con `SIGRTMIN+8`; se mantiene
+  `hyprland/window` para el título.
 - Los iconos Nerd usan el fallback Mono.
 - El resto de módulos heredan la fuente global.
+- `bar-autohide` oculta la barra con `SIGUSR1` cuando el cursor baja de
+  `y = 48` y la muestra al acercarse al borde superior. Se activa en Ajustes o
+  con `appearance set bar_autohide on` + `waybar-restart`.
 
 La configuración se genera con:
 
@@ -454,7 +500,7 @@ en `SUPER+SHIFT+W`. La entrada «Módulos de la barra» de Ajustes abre
 Archivo: `swaync/.config/swaync/style.css`.
 
 - Fuente global: `"SF Pro Text", "JetBrainsMono Nerd Font Mono"`.
-- `.widget-title`: `SF Pro Display`.
+- `.widget-title`: `SF Pro Text`.
 - `.summary`: mantiene `font-weight: 600`.
 - Los glifos Nerd caen en la Mono.
 
@@ -469,28 +515,50 @@ swaync-client -rs
 Archivos: `rofi/.config/rofi/config.rasi` y `power.rasi`.
 
 - Lanzador: `font: "SF Pro Text 13"`.
-- Menú de energía: `font: "SF Pro Text 10"` y `textbox` con el mismo tamaño.
-- `power-menu` usa `SF Pro Text 13` en su `theme-str` de confirmación.
+- Menú de energía: `font: "SF Pro Text 13"`; cada opción muestra un icono de
+  44 px y una etiqueta `SF Pro Text 10` debajo, dentro de un botón circular
+  (`border-radius: 52px`) en una fila de 6 columnas.
+- `power-menu` usa `SF Pro Text 13` para el mensaje de confirmación; la opción
+  `Cancelar` usa el tamaño compacto de 10 px definido en `power.rasi`.
+- El menú de energía activa `hover-select`, `me-select-entry: ""` y
+  `me-accept-entry: "MousePrimary"` en `power.rasi`. Así, al pasar el cursor la
+  opción queda seleccionada y un solo clic la activa, tanto en el menú principal
+  como en la confirmación.
 - El `icon-theme` sigue fijado a `WhiteSur-dark`; no se cambió en esta fase.
   Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
-- `settings-menu`, `avatar-select`, `wallpaper-select` y `waybar-settings`
-  reutilizan `config.rasi`.
+- `settings-menu`, `avatar-select`, `wallpaper-select`, `dock-settings` y
+  `waybar-settings` reutilizan `config.rasi`.
+- En `power.rasi`, el elemento seleccionado solo cambia de color y borde de
+  acento; el tamaño se mantiene para evitar saltos de layout. Rofi no soporta
+  transiciones ni escalado de iconos; el aumento real solo se aplica a los
+  iconos del dock.
 
 Probar:
 
 ```bash
 rofi -show drun -config ~/dotfiles/rofi/.config/rofi/config.rasi
+~/.local/bin/power-menu
+rofi -dump-theme -config ~/dotfiles/rofi/.config/rofi/power.rasi >/dev/null
 ```
 
 ## nwg-dock, Kitty y Hyprland
 
-- nwg-dock hereda la fuente GTK (`SF Pro Text 10`); no se añadió
-  `font-family` a su CSS.
+- nwg-dock declara `SF Pro Text` con fallback Nerd Font en su CSS; no depende
+  de `gtk-font-name`.
+- Las apps fijadas se guardan como clases, una por línea, en
+  `~/.cache/nwg-dock-pinned` (`kitty`, `firefox`, …). «Aplicaciones del dock»
+  en Ajustes abre `dock-settings` para añadirlas o quitarlas.
+- `dock_autohide` controla el flag `-d`; `dock-restart` lo lee de
+  `appearance.conf`. El valor por defecto es `on`.
+- Al pasar el cursor, los iconos del dock se amplían con
+  `-gtk-icon-transform: scale(1.18)` y una transición de 180 ms.
 - Kitty sigue con `JetBrainsMono Nerd Font` tamaño 11. Es una monoespaciada
   deliberada; no se usa SF Pro en la terminal.
 - Hyprland no dibuja títulos de ventana. Los títulos visibles los pinta Waybar
-  con `SF Pro Display`; las apps GTK/Qt usan `fonts-apply`.
+  con `SF Pro Text`; las apps GTK/Qt usan `fonts-apply`.
+- Las ventanas usan `windowsIn = popin 92%` y `windowsOut = gnomed` (efecto
+  lámpara mágica) con la curva `ease`.
 
 Recargar el dock:
 
@@ -500,9 +568,9 @@ Recargar el dock:
 
 ## Tema claro/oscuro
 
-`theme-toggle` cambia los symlinks `current.conf`, `current.css`, `current.rasi`
-y `current.kitty`, además de GTK, iconos, Kvantum, Waybar, SwayNC, Kitty y
-nwg-dock:
+`theme-toggle` cambia los symlinks `current.conf`, `current.lua`, `current.css`,
+`current.rasi` y `current.kitty`, además de GTK, iconos, Kvantum, Waybar,
+SwayNC, Kitty y nwg-dock:
 
 ```bash
 ~/.local/bin/theme-toggle        # alterna
@@ -511,6 +579,7 @@ nwg-dock:
 ```
 
 El lockscreen sigue el modo porque lee `~/.config/theme/current.conf`.
+Hyprland lee los colores desde `~/.config/theme/current.lua`.
 SDDM es independiente: su modo se define en `sddm/glass/theme.conf` y se puede
 cambiar con `sddm-install dark|light` o desde el menú del greeter (solo para esa
 sesión).
@@ -521,8 +590,8 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - Qt5ct/Qt6ct usan `Tela-circle-dracula` como icon theme.
 - `theme-toggle` no actualiza el tema/iconos de GTK4, solo `fonts-apply` toca su
   fuente.
-- La configuración de Hyprland sigue en sintaxis hyprlang (`.conf`); está
-  pendiente migrarla a Lua antes de que se retire el soporte.
+- La configuración de Hyprland ya está en Lua; los `.conf` quedan archivados en
+  `hypr/.config/hypr/legacy/` y no se cargan.
 
 ## Scripts
 
@@ -539,12 +608,17 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - `scripts/.local/bin/sddm-install`: instala el tema, fondo, avatar y desenfoque
   de glass.
 - `scripts/.local/bin/waybar-build` / `waybar-restart`: Waybar.
+- `scripts/.local/bin/bar-autohide`: auto-ocultado de Waybar por posición del cursor.
 - `scripts/.local/bin/dock-restart`: nwg-dock.
-- `scripts/.local/bin/theme-toggle`: tema claro/oscuro.
+- `scripts/.local/bin/dock-settings`: aplicaciones fijadas del dock.
+- `theme/.local/bin/theme-toggle`: tema claro/oscuro.
+- `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
 - `scripts/.local/bin/power-menu`, `keybinds-viewer`, `updates-count`,
   `waybar-settings`, `hypr-test`, `hyprland-glass`.
+- `hypr-lua-migrate.sh` (raíz del repo): migra Hyprland a Lua, valida, archiva
+  los `.conf` y actualiza el lanzador.
 
 ## Validación
 
@@ -623,10 +697,21 @@ Se esperan `font=SF Pro Text`, `fontDisplay=SF Pro Display`, `blur=on` u `off` e
 imports con versión (`QtQuick 2.15`, `QtQuick.Controls 2.15`,
 `QtGraphicalEffects 1.0`).
 
+Hyprland en Lua:
+
+```bash
+Hyprland --verify-config -c ~/dotfiles/hypr/.config/hypr/session.lua
+for f in ~/dotfiles/hypr/.config/hypr/*.lua; do luac -p "$f"; done
+hyprctl configerrors
+```
+
+En un TTY aparte, `hypr-test` debe abrir la sesión de prueba y `hyprctl
+configerrors` debe quedar vacío.
+
 Antes de commitear:
 
 ```bash
-for f in scripts/.local/bin/*; do
+for f in hypr-lua-migrate.sh scripts/.local/bin/* theme/.local/bin/*; do
   grep -q '^#!.*bash' "$f" && { bash -n "$f" || echo "FALLO: $f"; }
 done
 git diff --check
@@ -643,6 +728,18 @@ Revisar el commit de esta fase:
 ```bash
 git show --stat HEAD
 git show HEAD -- README.md
+```
+
+Backup de la migración Lua:
+
+```text
+~/.dotfiles-backup/hypr-lua-<fecha>/
+```
+
+Restaurar la configuración anterior:
+
+```bash
+cp -a ~/.dotfiles-backup/hypr-lua-<fecha>/hypr/. ~/dotfiles/hypr/.config/hypr/
 ```
 
 Backups de `fonts-apply`:

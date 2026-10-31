@@ -1,2 +1,3 @@
 #!/usr/bin/env bash
-exec dbus-run-session Hyprland -c "$HOME/dotfiles/hypr/.config/hypr/hyprland.conf"
+# Sesión de prueba con bus D-Bus aislado (no interfiere con la sesión principal).
+exec dbus-run-session start-hyprland -- -c "$HOME/dotfiles/hypr/.config/hypr/test.lua"

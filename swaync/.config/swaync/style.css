@@ -11,13 +11,13 @@
 .notification {
     background: @bg;
     border: 1px solid @border;
-    border-radius: 18px;
-    margin: 6px 12px;
+    border-radius: 16px;
+    margin: 8px 12px;
     padding: 0;
 }
 .notification.critical { border-color: @red; }
 
-.notification-content { background: transparent; padding: 12px; border-radius: 18px; }
+.notification-content { background: transparent; padding: 12px; border-radius: 6px; }
 .summary { color: @text; font-weight: 600; }
 .body, .time { color: @subtext; }
 
@@ -25,27 +25,27 @@
     background: @surface;
     color: @text;
     border-radius: 999px;
-    margin: 6px;
+    margin: 8px;
 }
 
 .control-center {
     background: @bg;
     border: 1px solid @border;
-    border-radius: 22px;
+    border-radius: 24px;
     padding: 8px;
 }
 .control-center-list { background: transparent; }
 
-.widget-title { color: @text; font-family: "SF Pro Display"; font-size: 16px; font-weight: 700; margin: 8px 12px; }
+.widget-title { color: @text; font-family: "SF Pro Text"; font-size: 16px; font-weight: 700; margin: 8px 12px; }
 .widget-title > button {
     background: @surface;
     color: @text;
     border: 1px solid @border;
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 4px 10px;
 }
 
-.widget-dnd { color: @text; margin: 6px 12px; }
+.widget-dnd { color: @text; margin: 8px 12px; }
 .widget-dnd > switch {
     background: @surface;
     border: 1px solid @border;
@@ -58,7 +58,7 @@
     background: @surface;
     color: @text;
     border: 1px solid @border;
-    border-radius: 14px;
-    margin: 6px 12px;
+    border-radius: 16px;
+    margin: 8px 12px;
     padding: 8px;
 }

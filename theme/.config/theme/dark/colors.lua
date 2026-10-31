@@ -1,0 +1,15 @@
+-- Generado desde colors.conf (no editar a mano; regenerar con theme-lua-gen).
+return {
+  bg = "rgba(1e1e2299)",
+  border_active = "rgba(ffffff40)",
+  border_inactive = "rgba(ffffff14)",
+  accent = "rgba(0a84ffff)",
+  text = "rgba(f5f5f7ff)",
+  subtext = "rgba(a1a1a6ff)",
+  red = "rgba(ff453aff)",
+  shadow = "rgba(00000066)",
+  lock_bg_brightness = "0.85",
+  font_ui = "SF Pro Text",
+  font_display = "SF Pro Display",
+  font_icons = "JetBrainsMono Nerd Font Mono",
+}

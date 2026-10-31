@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec start-hyprland -- -c "$HOME/dotfiles/hypr/.config/hypr/session.conf"
+exec start-hyprland -- -c "$HOME/dotfiles/hypr/.config/hypr/session.lua"

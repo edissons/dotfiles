@@ -15,7 +15,7 @@ window#waybar {
 .modules-left, .modules-right {
     background: @bg;
     border: 1px solid @border;
-    border-radius: 14px;
+    border-radius: 16px;
     padding: 2px 10px;
 }
 
@@ -24,26 +24,36 @@ padding: 0 12px 0 6px;
 font-size: 16px;
 }
 
-#workspaces button {
-padding: 0 8px;
-margin: 2px 1px;
-color: @subtext;
-background: transparent;
-border-radius: 10px;
-transition: all 0.2s ease;
+#workspaces {
+    padding: 0;
+    margin: 0;
 }
 
-#workspaces button:hover {
-background: @surface;
-color: @text;
+#custom-ws1, #custom-ws2, #custom-ws3, #custom-ws4 {
+    min-width: 28px;
+    min-height: 24px;
+    padding: 0 6px;
+    margin: 2px 1px;
+    color: @subtext;
+    background: transparent;
+    border-radius: 12px;
+    font-family: "JetBrainsMono Nerd Font Mono";
+    font-size: 16px;
+    transition: all 0.2s ease;
 }
 
-#workspaces button.active {
-color: @text;
-background: @surface;
+#custom-ws1.empty, #custom-ws2.empty, #custom-ws3.empty, #custom-ws4.empty {
+    font-family: "SF Pro Text";
+    font-size: 13px;
 }
 
-#window { padding: 0 10px; color: @subtext; font-family: "SF Pro Display"; font-weight: 500; }
+#custom-ws1.active, #custom-ws2.active, #custom-ws3.active, #custom-ws4.active,
+#custom-ws1:hover, #custom-ws2:hover, #custom-ws3:hover, #custom-ws4:hover {
+    color: @text;
+    background: @surface;
+}
+
+#window { padding: 0 10px; color: @subtext; font-family: "SF Pro Text"; font-weight: 500; }
 
 #tray, #bluetooth, #network, #pulseaudio, #battery, #clock {
 padding: 0 10px;
@@ -62,7 +72,7 @@ color: @subtext;
 tooltip {
     background: @bg;
     border: 1px solid @border;
-    border-radius: 10px;
+    border-radius: 12px;
 }
 
 tooltip label { color: @text; }

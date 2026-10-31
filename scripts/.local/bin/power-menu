@@ -47,7 +47,7 @@ fi
 
 case "$action" in
   lock)      "$HOME/.local/bin/lock-screen" ;;
-  logout)    hyprctl dispatch exit ;;
+  logout)    hyprctl dispatch 'hl.dsp.exit()' ;;
   suspend)   systemctl suspend ;;
   hibernate) systemctl hibernate ;;
   reboot)    systemctl reboot ;;

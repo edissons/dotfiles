@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Regenera colors.lua (claro y oscuro) a partir de colors.conf.
+T="$HOME/dotfiles/theme/.config/theme"
+for mode in dark light; do
+  [ -f "$T/$mode/colors.conf" ] || continue
+  awk 'BEGIN { print "-- Generado desde colors.conf (no editar a mano; regenerar con theme-lua-gen)."; print "return {" }
+       /^\$[A-Za-z0-9_]+[ \t]*=/ {
+         name = substr($1, 2)
+         sub(/^\$[A-Za-z0-9_]+[ \t]*=[ \t]*/, "", $0)
+         sub(/[ \t]+#.*$/, "", $0); sub(/[ \t]+$/, "", $0)
+         gsub(/\\/, "\\\\", $0); gsub(/"/, "\\\"", $0)
+         printf "  %s = \"%s\",\n", name, $0 }
+       END { print "}" }' "$T/$mode/colors.conf" > "$T/$mode/colors.lua"
+  echo "$mode/colors.lua regenerado"
+done

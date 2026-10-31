@@ -3,8 +3,12 @@
     surface: #ffffff8c;
     border: #0000001a;
     text: #1d1d1f;
-    subtext: #6e6e73;
+    subtext: #636366;
     accent: #007aff;
+    on-accent: #000000;
+    red: #d70015;
+    green: #1a7f37;
+    yellow: #8a6500;
 }
 
 * {

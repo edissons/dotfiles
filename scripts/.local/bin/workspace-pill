@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CACHE="${XDG_RUNTIME_DIR:-/tmp}/waybar-workspaces.json"
+DEFAULT_GLYPH="󰀻"
+
+declare -A GLYPHS=(
+  [kitty]="󰆍"
+  [Alacritty]="󰆍"
+  [brave-browser]="󰖟"
+  [firefox]="󰈹"
+  [org.kde.dolphin]="󰉋"
+  [org.kde.kate]="󰈙"
+  [code]="󰨞"
+  [code-oss]="󰨞"
+  [spotify]="󰓇"
+  [discord]="󰙯"
+)
+
+state_json() {
+  local active clients
+  active=$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.id // empty') || return 1
+  clients=$(hyprctl clients -j 2>/dev/null) || return 1
+  jq -cn --argjson active "${active:-0}" --argjson clients "$clients" \
+    '{active:$active, clients:$clients}'
+}
+
+render() {
+  local ws="$1" data active client class title glyph text cls tooltip
+  if [ -s "$CACHE" ]; then
+    data=$(<"$CACHE")
+  else
+    data=$(state_json) || exit 0
+  fi
+
+  active=$(jq -r '.active // 0' <<<"$data")
+  client=$(jq -c --argjson ws "$ws" '
+    [.clients[] | select(.workspace.id == $ws and .mapped == true and (.hidden != true))]
+    | sort_by(.focusHistoryID)
+    | .[0] // empty
+  ' <<<"$data")
+
+  cls=""
+  if [ "$active" = "$ws" ]; then
+    cls="active"
+  fi
+
+  if [ -z "$client" ]; then
+    text="$ws"
+    cls="${cls:+$cls }empty"
+    tooltip="Workspace $ws · vacío"
+  else
+    class=$(jq -r '.class // ""' <<<"$client")
+    title=$(jq -r '.title // ""' <<<"$client")
+    glyph=${GLYPHS[$class]:-$DEFAULT_GLYPH}
+    text="$glyph"
+    cls="${cls:+$cls }occupied"
+    tooltip="Workspace $ws · ${class:-app} — $title"
+  fi
+
+  jq -cn --arg text "$text" --arg tooltip "$tooltip" --arg class "$cls" \
+    '{text:$text, tooltip:$tooltip, class:($class | split(" ") | map(select(length > 0)))}'
+}
+
+click() {
+  local ws="$1" active clients current idx next
+  active=$(hyprctl activeworkspace -j | jq -r '.id')
+
+  if [ "$ws" != "$active" ]; then
+    hyprctl dispatch "hl.dsp.focus({ workspace = $ws })" >/dev/null
+    return 0
+  fi
+
+  clients=$(hyprctl clients -j)
+  current=$(hyprctl activewindow -j | jq -r '.address // empty')
+  local -a addrs=()
+  mapfile -t addrs < <(
+    jq -r --argjson ws "$ws" '
+      .[] | select(.workspace.id == $ws and .mapped == true and (.hidden != true))
+      | [.focusHistoryID, .address] | @tsv
+    ' <<<"$clients" | sort -n -k1,1 | cut -f2
+  )
+
+  [ "${#addrs[@]}" -gt 1 ] || return 0
+
+  idx=-1
+  for i in "${!addrs[@]}"; do
+    if [ "${addrs[$i]}" = "$current" ]; then
+      idx=$i
+      break
+    fi
+  done
+
+  if [ "$idx" -lt 0 ]; then
+    next="${addrs[0]}"
+  else
+    next="${addrs[$(((idx + 1) % ${#addrs[@]}))]}"
+  fi
+
+  hyprctl dispatch "hl.dsp.focus({ window = \"address:$next\" })" >/dev/null
+}
+
+daemon() {
+  local last="" tmp="$CACHE.tmp" active clients data
+  trap 'rm -f "$tmp"; exit 0' TERM INT
+
+  while :; do
+    active=$(hyprctl activeworkspace -j 2>/dev/null | jq -r '.id // empty') || {
+      sleep 1
+      continue
+    }
+    clients=$(hyprctl clients -j 2>/dev/null) || {
+      sleep 1
+      continue
+    }
+    data=$(jq -cn --argjson active "${active:-0}" --argjson clients "$clients" \
+      '{active:$active, clients:$clients}')
+
+    if [ "$data" != "$last" ]; then
+      printf '%s\n' "$data" >"$tmp"
+      mv "$tmp" "$CACHE"
+      last="$data"
+      pkill -SIGRTMIN+8 -x waybar 2>/dev/null || true
+    fi
+
+    sleep 0.5
+  done
+}
+
+case "${1:-}" in
+  render)
+    render "${2:?workspace requerido}"
+    ;;
+  click)
+    click "${2:?workspace requerido}"
+    ;;
+  daemon)
+    daemon
+    ;;
+  *)
+    printf 'uso: %s {render|click} <workspace> | daemon\n' "$0" >&2
+    exit 1
+    ;;
+esac

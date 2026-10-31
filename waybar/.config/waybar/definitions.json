@@ -10,12 +10,54 @@
     "tooltip": false,
     "on-click": "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi"
   },
-  "hyprland/workspaces": {
-    "format": "{id}",
-    "on-click": "activate",
-    "persistent-workspaces": {
-      "*": 4
-    }
+  "group/workspaces": {
+    "orientation": "horizontal",
+    "modules": [
+      "custom/ws1",
+      "custom/ws2",
+      "custom/ws3",
+      "custom/ws4"
+    ]
+  },
+  "custom/ws1": {
+    "exec": "$HOME/.local/bin/workspace-pill render 1",
+    "return-type": "json",
+    "signal": 8,
+    "tooltip": true,
+    "format": "{text}",
+    "align": 0.5,
+    "justify": "center",
+    "on-click": "$HOME/.local/bin/workspace-pill click 1"
+  },
+  "custom/ws2": {
+    "exec": "$HOME/.local/bin/workspace-pill render 2",
+    "return-type": "json",
+    "signal": 8,
+    "tooltip": true,
+    "format": "{text}",
+    "align": 0.5,
+    "justify": "center",
+    "on-click": "$HOME/.local/bin/workspace-pill click 2"
+  },
+  "custom/ws3": {
+    "exec": "$HOME/.local/bin/workspace-pill render 3",
+    "return-type": "json",
+    "signal": 8,
+    "tooltip": true,
+    "format": "{text}",
+    "align": 0.5,
+    "justify": "center",
+    "on-click": "$HOME/.local/bin/workspace-pill click 3"
+  },
+  "custom/ws4": {
+    "exec": "$HOME/.local/bin/workspace-pill render 4",
+    "return-type": "json",
+    "signal": 8,
+    "tooltip": true,
+    "format": "{text}",
+    "align": 0.5,
+    "justify": "center",
+    "on-click": "$HOME/.local/bin/workspace-pill click 4"
   },
   "hyprland/window": {
     "format": "{title}",
@@ -117,11 +159,11 @@
       "weeks-pos": "right",
       "on-scroll": 1,
       "format": {
-        "months": "<span color='#0a84ff'><b>{}</b></span>",
-        "days": "<span color='#8e8e93'>{}</span>",
-        "weeks": "<span color='#8e8e93'><small>S{}</small></span>",
-        "weekdays": "<span color='#8e8e93'><b>{}</b></span>",
-        "today": "<span color='#ff9f0a'><b><u>{}</u></b></span>"
+        "months": "<b>{}</b>",
+        "days": "{}",
+        "weeks": "<small>S{}</small>",
+        "weekdays": "<b>{}</b>",
+        "today": "<b><u>{}</u></b>"
       }
     },
     "actions": {

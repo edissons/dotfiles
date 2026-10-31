@@ -8,7 +8,7 @@ case "${1:-toggle}" in
 esac
 echo "$mode" > "$T/mode"
 
-for f in css conf rasi kitty; do
+for f in css conf lua rasi kitty; do
   ln -sf "$T/$mode/colors.$f" "$T/current.$f"
 done
 

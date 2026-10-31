@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+CFG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
+PIN="$HOME/.cache/nwg-dock-pinned"
+
+R() { rofi -dmenu -i -no-custom -format i -config "$CFG" "$@"; }
+restart() { "$HOME/.local/bin/dock-restart"; }
+
+desktop_entries() {
+    local dir f name class icon
+    for dir in \
+        "$HOME/.local/share/applications" \
+        "$HOME/.local/share/flatpak/exports/share/applications" \
+        "/var/lib/flatpak/exports/share/applications" \
+        /usr/local/share/applications \
+        /usr/share/applications; do
+        [ -d "$dir" ] || continue
+        while IFS= read -r -d '' f; do
+            grep -qE '^(NoDisplay|Hidden)=true' "$f" && continue
+            name=$(sed -n 's/^Name=//p' "$f" | head -n 1)
+            [ -n "$name" ] || continue
+            class=$(sed -n 's/^StartupWMClass=//p' "$f" | head -n 1)
+            [ -n "$class" ] || class=$(basename "$f" .desktop)
+            icon=$(sed -n 's/^Icon=//p' "$f" | head -n 1)
+            printf '%s\t%s\t%s\n' "$name" "$class" "$icon"
+        done < <(find "$dir" -maxdepth 1 -type f -name '*.desktop' -print0 2>/dev/null)
+    done | sort -u
+}
+
+add_app() {
+    local entries=() names=() classes=() icons=() idx class line name icon
+    mapfile -t entries < <(desktop_entries)
+    if [ "${#entries[@]}" -eq 0 ]; then
+        rofi -e "No se encontraron aplicaciones .desktop." -config "$CFG"
+        return
+    fi
+
+    for line in "${entries[@]}"; do
+        IFS=$'\t' read -r name class icon <<< "$line"
+        names+=("$name")
+        classes+=("$class")
+        icons+=("$icon")
+    done
+
+    idx=$(
+        for i in "${!names[@]}"; do
+            printf '%s\0icon\x1f%s\n' "${names[$i]}" "${icons[$i]:-application-x-executable}"
+        done | R -show-icons -p "Añadir al dock" -theme-str 'listview { lines: 10; }'
+    ) || return 0
+    [ -n "$idx" ] || return 0
+
+    class=${classes[$idx]}
+    if grep -qxF -- "$class" "$PIN"; then
+        rofi -e "Ya está fijada: $class" -config "$CFG"
+        return
+    fi
+
+    printf '%s\n' "$class" >> "$PIN"
+    restart
+}
+
+remove_app() {
+    local pinned=() idx
+    mapfile -t pinned < "$PIN"
+    if [ "${#pinned[@]}" -eq 0 ]; then
+        rofi -e "No hay aplicaciones fijadas." -config "$CFG"
+        return
+    fi
+
+    idx=$(printf '%s\n' "${pinned[@]}" | R -p "Quitar del dock") || return 0
+    [ -n "$idx" ] || return 0
+
+    grep -vxF -- "${pinned[$idx]}" "$PIN" > "$PIN.tmp" || true
+    mv "$PIN.tmp" "$PIN"
+    restart
+}
+
+mkdir -p "$(dirname "$PIN")"
+touch "$PIN"
+
+while true; do
+    count=$(grep -cve '^[[:space:]]*$' "$PIN" 2>/dev/null || true)
+    items=( "Añadir aplicación" "Quitar aplicación ($count)" "Listo" )
+    idx=$(printf '%s\n' "${items[@]}" | R -p "Aplicaciones del dock" -theme-str 'listview { lines: 3; }') || exit 0
+    case "$idx" in
+        0) add_app ;;
+        1) remove_app ;;
+        *) exit 0 ;;
+    esac
+done

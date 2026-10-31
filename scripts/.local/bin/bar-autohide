@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+SHOW_Y="${BAR_AUTOHIDE_SHOW_Y:-4}"
+HIDE_Y="${BAR_AUTOHIDE_HIDE_Y:-48}"
+visible=1
+
+trap 'exit 0' TERM INT
+sleep 1
+
+while :; do
+    pos=$(hyprctl cursorpos 2>/dev/null) || { sleep 0.5; continue; }
+    y=${pos#*,}
+    y=${y//[[:space:]]/}
+    [[ "$y" =~ ^-?[0-9]+$ ]] || { sleep 0.2; continue; }
+
+    if [ "$visible" -eq 0 ] && [ "$y" -le "$SHOW_Y" ]; then
+        pkill -SIGUSR1 -x waybar 2>/dev/null
+        visible=1
+    elif [ "$visible" -eq 1 ] && [ "$y" -gt "$HIDE_Y" ]; then
+        pkill -SIGUSR1 -x waybar 2>/dev/null
+        visible=0
+    fi
+
+    sleep 0.15
+done
