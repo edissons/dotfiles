@@ -1,0 +1,96 @@
+/*
+ * Fastfetch alineado con el tema claro/oscuro del repo.
+ * Colores ANSI: siguen la paleta de Kitty (current.kitty).
+ * bright_blue es legible sobre fondo oscuro (#1e1e22) y claro (#f6f6f8).
+ */
+{
+  "$schema": "https://github.com/fastfetch-cli/fastfetch/raw/dev/doc/json_schema.json",
+
+  "logo": {
+    "type": "small",
+    "source": "arch",
+    "padding": {
+      "top": 1,
+      "right": 4
+    }
+  },
+
+  "display": {
+    "separator": "  ",
+    "key": {
+      "width": 13
+    },
+    "color": {
+      "keys": "bright_blue",
+      "title": "bright_blue",
+      "output": null
+    }
+  },
+
+  "modules": [
+    {
+      "type": "title",
+      "key": " ",
+      "format": "{user-name}@{host-name}"
+    },
+    {
+      "type": "os",
+      "key": "  \uf303 OS",
+      "format": "{pretty-name}"
+    },
+    {
+      "type": "kernel",
+      "key": "  \uf17c Kernel",
+      "format": "{release}"
+    },
+    {
+      "type": "packages",
+      "key": "  \uf187 Packages",
+      "keyColor": "bright_yellow"
+    },
+    {
+      "type": "shell",
+      "key": "  \uf121 Shell"
+    },
+    {
+      "type": "wm",
+      "key": "  \uf2d0 WM",
+      "format": "{pretty-name}"
+    },
+    {
+      "type": "terminal",
+      "key": "  \uf120 Terminal"
+    },
+    {
+      "type": "display",
+      "key": "  \uf108 Display",
+      "format": "{width}x{height} @ {refresh-rate}Hz"
+    },
+    "break",
+    {
+      "type": "cpu",
+      "key": "  \uf2db CPU",
+      "format": "{name} @ {freq-max}"
+    },
+    {
+      "type": "gpu",
+      "key": "  \uf11b GPU",
+      "format": "{name}"
+    },
+    {
+      "type": "memory",
+      "key": "  \uf538 Memory",
+      "format": "{used} / {total} ({percentage})"
+    },
+    {
+      "type": "disk",
+      "key": "  \uf0a0 Disk",
+      "folders": "/",
+      "format": "{size-used} / {size-total} ({size-percentage})"
+    },
+    {
+      "type": "uptime",
+      "key": "  \uf017 Uptime"
+    }
+  ]
+}

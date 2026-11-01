@@ -1,10 +1,10 @@
 foreground #1d1d1f
 background #f6f6f8
-selection_foreground #ffffff
+selection_foreground #000000
 selection_background #007aff
 cursor #1d1d1f
 cursor_text_color #f6f6f8
-url_color #007aff
+url_color #0040dd
 
 color0 #1d1d1f
 color8 #6e6e73
@@ -22,3 +22,9 @@ color6 #32ade6
 color14 #0071a4
 color7 #aeaeb2
 color15 #8e8e93
+
+# Pestañas (superficie/tema, no ANSI)
+active_tab_background #ffffff
+active_tab_foreground #1d1d1f
+inactive_tab_background #f6f6f8
+inactive_tab_foreground #636366

@@ -178,26 +178,23 @@ hl.bind(mod .. " + " .. "Space", hl.dsp.exec_cmd("rofi -show drun -config " .. o
 
 hl.bind(mod .. " + " .. "SHIFT" .. " + " .. "B", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/waybar-restart"))
 
-
-
-
-
 hl.bind(mod .. " + " .. "SHIFT" .. " + " .. "W", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/wallpaper-select"))
 
 hl.bind(mod .. " + " .. "F1", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/keybinds-viewer"))
 
 hl.bind(mod .. " + " .. "SHIFT" .. " + " .. "P", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/power-menu"))
 
-
 hl.bind(mod .. " + " .. "SHIFT" .. " + " .. "D", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/dock-restart"))
 
-
 hl.bind(mod .. " + " .. "N", hl.dsp.exec_cmd("swaync-client -t -sw"))
-
 
 hl.bind(mod .. " + " .. "L", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/lock-screen"))
 
 require("daily")
+
+hl.bind("CTRL + ALT + Delete",
+        hl.dsp.exec_cmd("pkill btop || kitty --class btop-float -e btop", { float = true })
+)
 
 -- Autostart
 hl.on("hyprland.start", function()

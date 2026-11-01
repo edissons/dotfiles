@@ -80,6 +80,7 @@ Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon local
 Fuentes:
 
 - `SF Pro Text`, `SF Pro Display`, `SF Pro Rounded` y `SF Pro`.
+- `SF Mono` para la terminal.
 - `JetBrainsMono Nerd Font` y `JetBrainsMono Nerd Font Mono`.
 - `Inter` sigue instalada como respaldo, pero ya no se referencia en las
   configuraciones.
@@ -88,14 +89,19 @@ Criterio tipográfico:
 
 - `SF Pro Text` es la fuente general de interfaz.
 - `SF Pro Display` se usa en títulos, reloj, fecha grande y nombres.
-- `JetBrainsMono Nerd Font Mono` queda solo para terminal, campos
-  monoespaciados y glifos Nerd (wifi, batería, iconos).
+- `SF Mono` es la fuente de la terminal (Kitty).
+- `JetBrainsMono Nerd Font Mono` sigue como respaldo para los glifos Nerd
+  (wifi, batería, iconos) y como monoespaciada de GTK/Qt.
 
 SF Pro no se versiona en el repo. La copia usada está en:
 
 ```text
 ~/.local/share/fonts/San-Francisco-Pro-Fonts-master/
 ```
+
+`SF Mono` tampoco se versiona. Está instalada a nivel de usuario en
+`~/.local/share/fonts/SF-Mono/` (12 OTFs) y su licencia de Apple restringe la
+redistribución, así que no se incluye en el repo.
 
 ## Instalación de symlinks
 
@@ -104,6 +110,9 @@ Si faltan en un equipo nuevo (también al añadir scripts nuevos):
 ```bash
 ln -sfn ~/dotfiles/theme/.config/theme ~/.config/theme
 ln -sfn ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland ~/.config/nwg-dock-hyprland
+mkdir -p ~/.config/kitty ~/.config/fastfetch
+ln -sfn ~/dotfiles/kitty/.config/kitty/kitty.conf ~/.config/kitty/kitty.conf
+ln -sfn ~/dotfiles/fastfetch/.config/fastfetch/config.jsonc ~/.config/fastfetch/config.jsonc
 for f in ~/dotfiles/scripts/.local/bin/*; do
   ln -sfn "$f" "$HOME/.local/bin/$(basename "$f")"
 done
@@ -553,8 +562,14 @@ rofi -dump-theme -config ~/dotfiles/rofi/.config/rofi/power.rasi >/dev/null
   `appearance.conf`. El valor por defecto es `on`.
 - Al pasar el cursor, los iconos del dock se amplían con
   `-gtk-icon-transform: scale(1.18)` y una transición de 180 ms.
-- Kitty sigue con `JetBrainsMono Nerd Font` tamaño 11. Es una monoespaciada
-  deliberada; no se usa SF Pro en la terminal.
+- Kitty usa `SF Mono` tamaño 11, con `background_opacity 0.82`,
+  `window_padding_width 16` y decoraciones ocultas. La configuración activa es
+  `~/dotfiles/kitty/.config/kitty/kitty.conf`, enlazada como
+  `~/.config/kitty/kitty.conf`. Las pestañas van abajo solo con 2+ pestañas, con
+  estilo powerline inclinado y título `índice: título · nº ventanas`.
+  `symbol_map` reserva los rangos Nerd Font a `JetBrainsMono Nerd Font Mono`;
+  el resto del texto usa SF Mono. La paleta se incluye al final desde
+  `~/.config/theme/current.kitty`.
 - Hyprland no dibuja títulos de ventana. Los títulos visibles los pinta Waybar
   con `SF Pro Text`; las apps GTK/Qt usan `fonts-apply`.
 - Las ventanas usan `windowsIn = popin 92%` y `windowsOut = gnomed` (efecto
@@ -565,6 +580,34 @@ Recargar el dock:
 ```bash
 ~/.local/bin/dock-restart
 ```
+
+## Fastfetch
+
+Archivo: `fastfetch/.config/fastfetch/config.jsonc`, enlazado como
+`~/.config/fastfetch/config.jsonc`:
+
+```bash
+ln -sfn ~/dotfiles/fastfetch/.config/fastfetch/config.jsonc ~/.config/fastfetch/config.jsonc
+```
+
+- Logo de Arch (`small`) con padding superior y derecho.
+- Claves alineadas a 13 columnas y separador de dos espacios.
+- Colores ANSI tomados de la paleta de Kitty (`~/.config/theme/current.kitty`);
+  por eso siguen el tema claro/oscuro. `bright_blue` se usa para claves y
+  título.
+- Módulos: `title`, `OS`, `Kernel`, `Packages`, `Shell`, `WM`, `Terminal`,
+  `Display`, `CPU`, `GPU`, `Memory`, `Disk` y `Uptime`.
+- No usa las cajas de HyDE.
+
+Validar que la configuración explícita y la del symlink producen la misma
+salida:
+
+```bash
+fastfetch --config ~/dotfiles/fastfetch/.config/fastfetch/config.jsonc --pipe false
+fastfetch --pipe false
+```
+
+Ambos comandos deben terminar con código 0, sin stderr y con la misma salida.
 
 ## Tema claro/oscuro
 
@@ -628,8 +671,15 @@ Fuentes:
 fc-match -f '%{family} | %{style} | %{file}\n' "SF Pro Text"
 fc-match -f '%{family} | %{style} | %{file}\n' "SF Pro Display"
 fc-match -f '%{family} | %{style} | %{file}\n' "JetBrainsMono Nerd Font Mono"
+fc-match 'SF Mono'
 sudo -u sddm fc-match -f '%{family} | %{style} | %{file}\n' "SF Pro Text"
 ```
+
+`fc-match 'SF Mono'` debe resolver a
+`~/.local/share/fonts/SF-Mono/SF-Mono-Regular.otf`. Kitty 0.49.2 no tiene
+`--debug-config`; para validar su configuración, usar el cargador de
+configuración de Kitty o simplemente arrancar `kitty` y comprobar que no hay
+errores.
 
 GTK/Qt:
 
