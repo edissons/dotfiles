@@ -42,11 +42,9 @@ while true; do
           "Fondo del inicio de sesión"
           "Desenfoque del bloqueo: $(onoff lock_blur off)"
           "Desenfoque del inicio de sesión: $(onoff sddm_blur on)"
-          "Módulos de la barra"
-          "Aplicaciones del dock"
-          "Ocultar dock automáticamente: $(onoff dock_autohide on)"
-          "Ocultar barra automáticamente: $(onoff bar_autohide off)" )
-  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 10; }') || exit 0
+          "Barra y dock"
+          "Aplicaciones del dock" )
+  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 8; }') || exit 0
   case "$idx" in
     0) "$HOME/.local/bin/wallpaper-select" ;;
     1) term "$HOME/.local/bin/avatar-select" ;;
@@ -57,7 +55,5 @@ while true; do
     5) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
     6) "$HOME/.local/bin/waybar-settings" ;;
     7) "$HOME/.local/bin/dock-settings" ;;
-    8) toggle dock_autohide on; "$HOME/.local/bin/dock-restart" ;;
-    9) toggle bar_autohide off; "$HOME/.local/bin/waybar-restart" ;;
   esac
 done

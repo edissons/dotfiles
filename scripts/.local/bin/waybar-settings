@@ -1,21 +1,344 @@
-#!/usr/bin/env bash
-M="$HOME/dotfiles/waybar/.config/waybar/modules.json"
-R=(rofi -dmenu -no-custom -i -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi")
-save() { jq "$@" "$M" > "$M.tmp" && mv "$M.tmp" "$M"; }
+#!/usr/bin/env python3
+import json
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
 
-list=$(jq -r '. as $m | ["left","center","right"][] as $z | $m[$z][] as $n
-  | "\(if ($m.disabled | index($n)) then "✗" else "✓" end)  \($n)  [\($z)]"' "$M")
-sel=$(printf '%s\n' "$list" | "${R[@]}" -p "Módulos") || exit 0
-name=$(awk '{print $2}' <<<"$sel")
-action=$(printf '%s\n' "Activar / desactivar" "Mover a la izquierda" "Mover al centro" "Mover a la derecha" \
-  | "${R[@]}" -p "$name") || exit 0
+import gi
 
-mv_to() { save --arg n "$name" ".left -= [\$n] | .center -= [\$n] | .right -= [\$n] | .$1 += [\$n]"; }
-case "$action" in
-  Activar*)  save --arg n "$name" 'if (.disabled | index($n)) then .disabled -= [$n] else .disabled += [$n] end' ;;
-  *izquierda) mv_to left ;;
-  *centro)    mv_to center ;;
-  *derecha)   mv_to right ;;
-  *) exit 0 ;;
-esac
-"$HOME/.local/bin/waybar-restart"
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib, Gtk
+
+HOME = Path.home()
+REPO = Path(__file__).resolve().parents[3]
+if not (REPO / "waybar/.config/waybar/modules.json").is_file():
+    REPO = HOME / "dotfiles"
+
+MODULES = REPO / "waybar/.config/waybar/modules.json"
+SETTINGS_CSS = REPO / "waybar/.config/waybar/settings.css"
+THEME_CSS = HOME / ".config/theme/current.css"
+APPEARANCE = HOME / ".local/bin/appearance"
+DOCK_RESTART = HOME / ".local/bin/dock-restart"
+DOCK_SETTINGS = HOME / ".local/bin/dock-settings"
+WAYBAR_RESTART = HOME / ".local/bin/waybar-restart"
+
+ZONES = (("left", "Izquierda"), ("center", "Centro"), ("right", "Derecha"))
+
+
+def appearance_get(key, default):
+    try:
+        out = subprocess.check_output(
+            [str(APPEARANCE), "get", key, default],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        return out.strip() or default
+    except (OSError, subprocess.SubprocessError):
+        return default
+
+
+def appearance_set(key, value):
+    try:
+        subprocess.run(
+            [str(APPEARANCE), "set", key, value],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
+def load_css(path, priority):
+    if not path.is_file():
+        print(f"waybar-settings: CSS not found: {path}", file=sys.stderr)
+        return None
+    provider = Gtk.CssProvider()
+    provider.connect("parsing-error", lambda _p, section, error: print(
+        f"waybar-settings: CSS error in {path}:{section.get_start_line() + 1}: {error.message}",
+        file=sys.stderr,
+    ))
+    try:
+        provider.load_from_path(str(path))
+    except GLib.Error as exc:
+        print(f"waybar-settings: cannot load {path}: {exc.message}", file=sys.stderr)
+        return None
+    screen = Gdk.Screen.get_default()
+    if screen is not None:
+        Gtk.StyleContext.add_provider_for_screen(screen, provider, priority)
+    return provider
+
+
+class SettingsPanel(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Barra y dock")
+        self.set_default_size(520, 700)
+        self.get_style_context().add_class("settings-window")
+
+        self.modules = self.load_modules()
+        self.restart_source = None
+        self.loading = True
+
+        self.build_header()
+        self.build_body()
+
+        self.connect("destroy", self.on_destroy)
+        self.loading = False
+
+    def load_modules(self):
+        with MODULES.open(encoding="utf-8") as handle:
+            data = json.load(handle)
+        for zone, _label in ZONES:
+            data.setdefault(zone, [])
+        data.setdefault("disabled", [])
+        return data
+
+    def build_header(self):
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.get_style_context().add_class("settings-header")
+        title = Gtk.Label(label="Barra y dock")
+        title.get_style_context().add_class("settings-title")
+        header.set_custom_title(title)
+        self.set_titlebar(header)
+
+    def build_body(self):
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_shadow_type(Gtk.ShadowType.NONE)
+
+        surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        surface.get_style_context().add_class("settings-surface")
+        surface.set_border_width(16)
+        scroller.add(surface)
+
+        surface.pack_start(self.section_title("BARRA"), False, False, 0)
+
+        seen = set()
+        for zone, _label in ZONES:
+            for name in self.modules.get(zone, []):
+                if name in seen:
+                    continue
+                seen.add(name)
+                surface.pack_start(self.module_row(name, zone), False, False, 0)
+
+        surface.pack_start(self.bar_autohide_row(), False, False, 0)
+        surface.pack_start(self.section_title("DOCK"), False, False, 0)
+        surface.pack_start(self.dock_enabled_row(), False, False, 0)
+        surface.pack_start(self.dock_mode_rows(), False, False, 0)
+        surface.pack_start(self.dock_apps_row(), False, False, 0)
+
+        self.add(scroller)
+
+    def section_title(self, text):
+        label = Gtk.Label(label=text, xalign=0)
+        label.get_style_context().add_class("section-title")
+        return label
+
+    def module_row(self, name, zone):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        label = Gtk.Label(label=name, xalign=0)
+        label.set_hexpand(True)
+        label.set_ellipsize(3)
+        row.pack_start(label, True, True, 0)
+
+        combo = Gtk.ComboBoxText()
+        for zone_id, zone_label in ZONES:
+            combo.append(zone_id, zone_label)
+        combo.set_active_id(zone)
+        combo.connect("changed", self.on_zone_changed, name)
+        row.pack_start(combo, False, False, 0)
+
+        switch = Gtk.Switch()
+        switch.set_active(name not in self.modules["disabled"])
+        switch.set_valign(Gtk.Align.CENTER)
+        switch.connect("notify::active", self.on_module_toggled, name)
+        row.pack_start(switch, False, False, 0)
+
+        return row
+
+    def bar_autohide_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        label = Gtk.Label(label="Ocultar barra automáticamente", xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+
+        switch = Gtk.Switch()
+        switch.set_active(appearance_get("bar_autohide", "off") == "on")
+        switch.set_valign(Gtk.Align.CENTER)
+        switch.connect("notify::active", self.on_bar_autohide)
+        row.pack_start(switch, False, False, 0)
+
+        return row
+
+    def dock_enabled_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        label = Gtk.Label(label="Dock activo", xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+
+        self.dock_switch = Gtk.Switch()
+        self.dock_switch.set_active(appearance_get("dock_enabled", "on") == "on")
+        self.dock_switch.set_valign(Gtk.Align.CENTER)
+        self.dock_switch.connect("notify::active", self.on_dock_enabled)
+        row.pack_start(self.dock_switch, False, False, 0)
+
+        return row
+
+    def dock_mode_rows(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        box.get_style_context().add_class("setting-row")
+
+        self.radio_auto = Gtk.RadioButton.new_with_label(None, "Ocultar automáticamente")
+        self.radio_always = Gtk.RadioButton.new_with_label_from_widget(
+            self.radio_auto, "Mostrar siempre"
+        )
+
+        autohide = appearance_get("dock_autohide", "on") == "on"
+        self.radio_auto.set_active(autohide)
+        self.radio_always.set_active(not autohide)
+
+        self.radio_auto.connect("toggled", self.on_dock_mode)
+        self.radio_always.connect("toggled", self.on_dock_mode)
+
+        box.pack_start(self.radio_auto, False, False, 0)
+        box.pack_start(self.radio_always, False, False, 0)
+
+        self.update_dock_mode_sensitivity()
+        return box
+
+    def dock_apps_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        button = Gtk.Button(label="Aplicaciones del dock")
+        button.get_style_context().add_class("secondary-button")
+        button.set_halign(Gtk.Align.START)
+        button.connect("clicked", self.on_dock_apps)
+        row.pack_start(button, False, False, 0)
+
+        return row
+
+    def save_modules(self):
+        payload = json.dumps(self.modules, indent=2, ensure_ascii=False) + "\n"
+        fd, tmp = tempfile.mkstemp(
+            dir=str(MODULES.parent), prefix=".modules.", suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(payload)
+            os.chmod(tmp, 0o644)
+            os.replace(tmp, MODULES)
+        except Exception:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+    def schedule_waybar_restart(self):
+        if self.restart_source is not None:
+            GLib.source_remove(self.restart_source)
+        self.restart_source = GLib.timeout_add(250, self.restart_waybar)
+
+    def restart_waybar(self):
+        self.restart_source = None
+        subprocess.Popen(
+            [str(WAYBAR_RESTART)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        return False
+
+    def on_zone_changed(self, combo, name):
+        if self.loading:
+            return
+        zone = combo.get_active_id()
+        if zone not in dict(ZONES):
+            return
+        for zone_id, _label in ZONES:
+            self.modules[zone_id] = [
+                item for item in self.modules.get(zone_id, []) if item != name
+            ]
+        self.modules[zone].append(name)
+        self.save_modules()
+        self.schedule_waybar_restart()
+
+    def on_module_toggled(self, switch, _pspec, name):
+        if self.loading:
+            return
+        disabled = self.modules.setdefault("disabled", [])
+        if switch.get_active():
+            self.modules["disabled"] = [item for item in disabled if item != name]
+        elif name not in disabled:
+            disabled.append(name)
+        self.save_modules()
+        self.schedule_waybar_restart()
+
+    def on_bar_autohide(self, switch, _pspec):
+        if self.loading:
+            return
+        appearance_set("bar_autohide", "on" if switch.get_active() else "off")
+        self.schedule_waybar_restart()
+
+    def on_dock_enabled(self, switch, _pspec):
+        if self.loading:
+            return
+        appearance_set("dock_enabled", "on" if switch.get_active() else "off")
+        self.update_dock_mode_sensitivity()
+        subprocess.Popen(
+            [str(DOCK_RESTART)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def update_dock_mode_sensitivity(self):
+        sensitive = self.dock_switch.get_active()
+        self.radio_auto.set_sensitive(sensitive)
+        self.radio_always.set_sensitive(sensitive)
+
+    def on_dock_mode(self, button):
+        if self.loading or not button.get_active():
+            return
+        appearance_set("dock_autohide", "on" if button is self.radio_auto else "off")
+        subprocess.Popen(
+            [str(DOCK_RESTART)],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+
+    def on_dock_apps(self, _button):
+        subprocess.Popen([str(DOCK_SETTINGS)], start_new_session=True)
+
+    def on_destroy(self, _window):
+        if self.restart_source is not None:
+            GLib.source_remove(self.restart_source)
+            self.restart_source = None
+            self.restart_waybar()
+        Gtk.main_quit()
+
+
+def main():
+    load_css(THEME_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    load_css(SETTINGS_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+
+    panel = SettingsPanel()
+    panel.show_all()
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

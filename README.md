@@ -31,10 +31,13 @@ Archivos y rutas activas:
   ignorado por Git.
 - `~/.config/nwg-dock-hyprland -> ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland`.
 - `~/.local/bin/* -> ~/dotfiles/scripts/.local/bin/*`: scripts.
-- Waybar usa `~/.cache/waybar/config.json` generado por `waybar-build` y
-  `~/dotfiles/waybar/.config/waybar/style.css`.
+- Waybar usa `~/.cache/waybar/config.json` generado por `waybar-build`,
+  `~/dotfiles/waybar/.config/waybar/style.css` y
+  `~/dotfiles/waybar/.config/waybar/settings.css` (este último solo para el panel
+  `waybar-settings`).
 - SwayNC se lanza con `-c`/`-s` apuntando al repo.
-- Rofi, Kitty y nwg-dock se lanzan con rutas explícitas del repo.
+- Rofi y Kitty se lanzan con rutas explícitas del repo; nwg-dock usa el enlace
+  `~/.config/nwg-dock-hyprland`.
 
 `~/.config/hypr` contiene configuraciones HyDE antiguas y no es la configuración
 activa. No editar allí esperando cambios en la sesión.
@@ -73,7 +76,11 @@ wl-clipboard cliphist swaybg
 hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
 kvantum kvantum-qt5 qt5ct qt6ct
 network-manager-applet blueman pacman-contrib libnotify
+python-gobject gtk3
 ```
+
+`waybar-settings` requiere los bindings GTK3 de PyGObject (`python-gobject` +
+`gtk3`).
 
 Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon local).
 
@@ -131,10 +138,22 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Fondo del inicio de sesión | Igual, y sincroniza SDDM con `sddm-install` (pide `sudo`). |
 | Desenfoque del bloqueo | Activa o desactiva el desenfoque del fondo de hyprlock. |
 | Desenfoque del inicio de sesión | Activa o desactiva el desenfoque del fondo de SDDM y sincroniza (pide `sudo`). |
-| Módulos de la barra | Abre `waybar-settings`: activar, desactivar y mover módulos. |
+| Barra y dock | Abre el panel GTK3 `waybar-settings`: módulos de la barra, auto-ocultado y ajustes del dock. |
 | Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. |
-| Ocultar dock automáticamente | Activa o desactiva `-d` y reinicia nwg-dock. |
-| Ocultar barra automáticamente | Activa o desactiva el daemon `bar-autohide` y reinicia Waybar. |
+
+El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
+
+- **Barra**: una fila por módulo con selector de zona (Izquierda/Centro/Derecha)
+  y switch activado/desactivado, más un switch para el auto-ocultado de la barra.
+- **Dock**: switch «Dock activo», radios «Ocultar automáticamente»/«Mostrar
+  siempre» y botón «Aplicaciones del dock». Con el dock desactivado, los radios
+  siguen visibles pero deshabilitados.
+
+El panel guarda `modules.json` de forma atómica, aplica los cambios con un
+reinicio de Waybar debounced de ~250 ms y, si se cierra con un reinicio pendiente,
+lo ejecuta una sola vez. Los cambios de dock se aplican al instante con
+`dock-restart`. El panel carga `waybar/.config/waybar/settings.css` después de
+`~/.config/theme/current.css`.
 
 Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) con
 `appearance get|set`:
@@ -145,6 +164,7 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 | `lock_blur` | `on` / `off` | `off` |
 | `sddm_bg` | `desktop` o ruta de una imagen | `desktop` |
 | `sddm_blur` | `on` / `off` | `on` |
+| `dock_enabled` | `on` / `off` | `on` |
 | `dock_autohide` | `on` / `off` | `on` |
 | `bar_autohide` | `on` / `off` | `off` |
 
@@ -162,7 +182,10 @@ Scripts implicados:
 - `appearance-wall lock|sddm`: imprime la ruta del fondo que corresponde, con
   respaldo a `~/Pictures/wallpapers/wall.jpg`.
 - `bar-autohide`: oculta Waybar cuando el cursor baja del borde superior y la
-  muestra al volver a `y <= 4`; se controla con `bar_autohide`.
+  muestra al volver a `y <= 4`; se controla con `bar_autohide` desde el panel.
+- `waybar-settings`: panel GTK3 «Barra y dock»; edita `modules.json` y los
+  ajustes de barra/dock.
+- `dock-restart`: lee `dock_enabled` y `dock_autohide` y (re)inicia nwg-dock.
 - `dock-settings`: añade o quita clases de `~/.cache/nwg-dock-pinned`.
 - `lock-screen`: usa `appearance-wall lock` y aplica `lock_blur`.
 - `sddm-install`: usa `appearance-wall sddm` y escribe `blur=` en `theme.conf`.
@@ -485,8 +508,9 @@ Archivo: `waybar/.config/waybar/style.css`.
 - Los iconos Nerd usan el fallback Mono.
 - El resto de módulos heredan la fuente global.
 - `bar-autohide` oculta la barra con `SIGUSR1` cuando el cursor baja de
-  `y = 48` y la muestra al acercarse al borde superior. Se activa en Ajustes o
-  con `appearance set bar_autohide on` + `waybar-restart`.
+  `y = 48` y la muestra al acercarse al borde superior. Se activa con el switch
+  «Ocultar barra automáticamente» del panel `waybar-settings` o con
+  `appearance set bar_autohide on` + `waybar-restart`.
 
 La configuración se genera con:
 
@@ -496,13 +520,38 @@ La configuración se genera con:
 ```
 
 `waybar-build` combina `modules.json` y `definitions.json` en
-`~/.cache/waybar/config.json`. `modules.json` desactiva `temperature`,
-`bluetooth` y `network`.
+`~/.cache/waybar/config.json`. La lista `disabled` de `modules.json` es
+`[temperature, bluetooth, network]`.
+
+`waybar-restart` usa `flock` para serializar reinicios y escribe la salida de
+Waybar en `~/.cache/waybar/waybar.log`. Antes de lanzar `bar-autohide` y
+`workspace-pill daemon`, espera a que `hyprctl layers` muestre el namespace
+`waybar`; así el primer `SIGRTMIN+8` de `workspace-pill` no llega antes de que
+Waybar instale su manejador de señales en un arranque en frío. Si Waybar termina
+o no llega a mapearse, el script sale con código 1 e indica el log, sin iniciar
+los daemons.
 
 El botón de engranaje (`custom/settings`) abre `settings-menu`. El módulo
 `custom/wallpaper` ya no está en la barra: el cambio de fondo está en Ajustes y
-en `SUPER+SHIFT+W`. La entrada «Módulos de la barra» de Ajustes abre
-`waybar-settings`, que activa, desactiva y mueve módulos entre zonas.
+en `SUPER+SHIFT+W`. La entrada «Barra y dock» de Ajustes abre el panel GTK3
+`waybar-settings`, que activa, desactiva y mueve módulos entre zonas, controla el
+auto-ocultado de la barra y los ajustes del dock. El panel usa
+`waybar/.config/waybar/settings.css`, cargado después de
+`~/.config/theme/current.css`.
+
+### Problemas de arranque
+
+Si Waybar no aparece o los módulos de workspace no se actualizan, revisar:
+
+```bash
+cat ~/.cache/waybar/waybar.log
+hyprctl layers | grep -A2 'namespace: waybar'
+```
+
+`waybar-restart` vacía el log en cada reinicio. Los mensajes
+`waybar-restart: timed out waiting for waybar layer` y
+`waybar-restart: waybar exited during startup` indican que los daemons no se
+iniciaron.
 
 ## SwayNC
 
@@ -536,8 +585,8 @@ Archivos: `rofi/.config/rofi/config.rasi` y `power.rasi`.
 - El `icon-theme` sigue fijado a `WhiteSur-dark`; no se cambió en esta fase.
   Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
-- `settings-menu`, `avatar-select`, `wallpaper-select`, `dock-settings` y
-  `waybar-settings` reutilizan `config.rasi`.
+- `settings-menu`, `avatar-select`, `wallpaper-select` y `dock-settings`
+  reutilizan `config.rasi`. `waybar-settings` es un panel GTK3 y no usa Rofi.
 - En `power.rasi`, el elemento seleccionado solo cambia de color y borde de
   acento; el tamaño se mantiene para evitar saltos de layout. Rofi no soporta
   transiciones ni escalado de iconos; el aumento real solo se aplica a los
@@ -558,8 +607,10 @@ rofi -dump-theme -config ~/dotfiles/rofi/.config/rofi/power.rasi >/dev/null
 - Las apps fijadas se guardan como clases, una por línea, en
   `~/.cache/nwg-dock-pinned` (`kitty`, `firefox`, …). «Aplicaciones del dock»
   en Ajustes abre `dock-settings` para añadirlas o quitarlas.
-- `dock_autohide` controla el flag `-d`; `dock-restart` lo lee de
-  `appearance.conf`. El valor por defecto es `on`.
+- `dock_enabled` (`on` por defecto) decide si el dock se lanza; `dock_autohide`
+  (`on` por defecto) controla el flag `-d`. `dock-restart` lee ambos de
+  `appearance.conf`: si `dock_enabled=off`, mata el dock y sale sin relanzarlo.
+  Usa `flock` para serializar toggles rápidos.
 - Al pasar el cursor, los iconos del dock se amplían con
   `-gtk-icon-transform: scale(1.18)` y una transición de 180 ms.
 - Kitty usa `SF Mono` tamaño 11, con `background_opacity 0.82`,
@@ -650,16 +701,19 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - `scripts/.local/bin/fonts-install`: SF Pro system-wide para SDDM.
 - `scripts/.local/bin/sddm-install`: instala el tema, fondo, avatar y desenfoque
   de glass.
-- `scripts/.local/bin/waybar-build` / `waybar-restart`: Waybar.
+- `scripts/.local/bin/waybar-build` / `waybar-restart`: genera la configuración y
+  reinicia Waybar (log en `~/.cache/waybar/waybar.log`).
+- `scripts/.local/bin/waybar-settings`: panel GTK3 «Barra y dock».
 - `scripts/.local/bin/bar-autohide`: auto-ocultado de Waybar por posición del cursor.
-- `scripts/.local/bin/dock-restart`: nwg-dock.
+- `scripts/.local/bin/dock-restart`: nwg-dock; respeta `dock_enabled` y
+  `dock_autohide`.
 - `scripts/.local/bin/dock-settings`: aplicaciones fijadas del dock.
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
 - `scripts/.local/bin/power-menu`, `keybinds-viewer`, `updates-count`,
-  `waybar-settings`, `hypr-test`, `hyprland-glass`.
+  `hypr-test`, `hyprland-glass`.
 - `hypr-lua-migrate.sh` (raíz del repo): migra Hyprland a Lua, valida, archiva
   los `.conf` y actualiza el lanzador.
 

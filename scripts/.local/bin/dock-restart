@@ -1,11 +1,22 @@
 #!/usr/bin/env bash
 A="$HOME/.local/bin/appearance"
+runtime="${XDG_RUNTIME_DIR:-$HOME/.cache}"
+mkdir -p "$runtime"
+lock="$runtime/dock-restart.lock"
+
+exec 9>"$lock"
+flock 9
+
 autohide=$("$A" get dock_autohide on 2>/dev/null || echo on)
 args=(-i 44 -l top -w 0 -hd 100 -lp start -mb 8)
 [ "$autohide" = on ] && args=(-d "${args[@]}")
 
 pkill -x nwg-dock-hyprla
 sleep 0.3
+
+enabled=$("$A" get dock_enabled on 2>/dev/null || echo on)
+[ "$enabled" = on ] || exit 0
+
 setsid nohup nwg-dock-hyprland "${args[@]}" \
   -c "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi" \
-  >/tmp/dock.log 2>&1 &
+  >/tmp/dock.log 2>&1 9>&- &

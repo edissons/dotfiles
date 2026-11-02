@@ -1,13 +1,40 @@
 #!/usr/bin/env bash
 W="$HOME/dotfiles/waybar/.config/waybar"
 A="$HOME/.local/bin/appearance"
+LOG="$HOME/.cache/waybar/waybar.log"
+runtime="${XDG_RUNTIME_DIR:-$HOME/.cache}"
+lock="$runtime/waybar-restart.lock"
+
+mkdir -p "$runtime" "$(dirname "$LOG")"
+exec 9>"$lock"
+flock 9
+
 "$HOME/.local/bin/waybar-build" || exit 1
 pkill -f '[b]ar-autohide'
 pkill -f '[w]orkspace-pill daemon'
 pkill -x waybar
 sleep 0.3
-setsid nohup waybar -c "$HOME/.cache/waybar/config.json" -s "$W/style.css" >/dev/null 2>&1 &
-if [ "$("$A" get bar_autohide off 2>/dev/null || echo off)" = on ]; then
-  setsid nohup "$HOME/.local/bin/bar-autohide" >/dev/null 2>&1 &
+: >"$LOG"
+setsid nohup waybar -c "$HOME/.cache/waybar/config.json" -s "$W/style.css" >"$LOG" 2>&1 9>&- &
+
+mapped=0
+for _ in $(seq 50); do
+  sleep 0.1
+  if hyprctl layers 2>/dev/null | grep -q 'namespace: waybar'; then
+    mapped=1
+    break
+  fi
+  if ! pgrep -x waybar >/dev/null; then
+    printf 'waybar-restart: waybar exited during startup; see %s\n' "$LOG" >&2
+    exit 1
+  fi
+done
+if [ "$mapped" -ne 1 ]; then
+  printf 'waybar-restart: timed out waiting for waybar layer; see %s\n' "$LOG" >&2
+  exit 1
 fi
-setsid nohup "$HOME/.local/bin/workspace-pill" daemon >/dev/null 2>&1 &
+
+if [ "$("$A" get bar_autohide off 2>/dev/null || echo off)" = on ]; then
+  setsid nohup "$HOME/.local/bin/bar-autohide" >/dev/null 2>&1 9>&- &
+fi
+setsid nohup "$HOME/.local/bin/workspace-pill" daemon >/dev/null 2>&1 9>&- &
