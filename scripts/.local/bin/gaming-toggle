@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+set -u
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+STATE="$RUNTIME/gaming-mode.state"
+PIDFILE="$RUNTIME/gaming-mode.pid"
+LOCK="$RUNTIME/gaming-mode.lock"
+HYPRIDLE_CONF="$HOME/dotfiles/hypr/.config/hypr/hypridle.conf"
+
+notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a "Gaming mode" "$1" >/dev/null 2>&1 || true
+    fi
+}
+
+gaming_inhibitor_pids() {
+    ps -eo pid=,comm=,args= |
+        awk '$2 == "systemd-inhibit" && /--why=Gaming mode/ { print $1 }'
+}
+
+cleanup_gaming_inhibitors() {
+    local pid pids
+    pids=$(gaming_inhibitor_pids)
+    for pid in $pids; do
+        kill -- "-$pid" 2>/dev/null || kill "$pid" 2>/dev/null || true
+    done
+    for _ in $(seq 20); do
+        pids=$(gaming_inhibitor_pids)
+        [ -z "$pids" ] && break
+        sleep 0.05
+    done
+    for pid in $pids; do
+        kill -9 -- "-$pid" 2>/dev/null || kill -9 "$pid" 2>/dev/null || true
+    done
+    rm -f "$PIDFILE"
+}
+
+stop_hypridle() {
+    pkill -x hypridle 2>/dev/null || true
+    for _ in $(seq 20); do
+        pgrep -x hypridle >/dev/null 2>&1 || return 0
+        sleep 0.05
+    done
+    pkill -9 -x hypridle 2>/dev/null || true
+}
+
+start_hypridle() {
+    pgrep -x hypridle >/dev/null 2>&1 && return 0
+    command -v hypridle >/dev/null 2>&1 || return 1
+    setsid hypridle -c "$HYPRIDLE_CONF" >/dev/null 2>&1 9>&- &
+}
+
+turn_on() {
+    mkdir -p "$RUNTIME"
+    stop_hypridle
+
+    local pid pids count
+    pids=$(gaming_inhibitor_pids)
+    count=$(printf '%s\n' "$pids" | awk 'NF { n++ } END { print n + 0 }')
+    if [ "$count" -eq 1 ]; then
+        pid=$(printf '%s\n' "$pids" | awk 'NF { print $1; exit }')
+        if kill -0 "$pid" 2>/dev/null; then
+            printf '%s\n' "$pid" > "$PIDFILE"
+            printf 'on\n' > "$STATE"
+            notify "Gaming mode ON"
+            return 0
+        fi
+    fi
+    if [ "$count" -gt 0 ]; then
+        cleanup_gaming_inhibitors
+    fi
+
+    rm -f "$PIDFILE"
+
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+        setsid systemd-inhibit --what=idle:sleep:handle-lid-switch \
+            --mode=block --why="Gaming mode" sleep infinity \
+            >/dev/null 2>&1 9>&- &
+        pid=$!
+        printf '%s\n' "$pid" > "$PIDFILE"
+        sleep 0.1
+        if kill -0 "$pid" 2>/dev/null; then
+            printf 'on\n' > "$STATE"
+            notify "Gaming mode ON"
+            return 0
+        fi
+        rm -f "$PIDFILE"
+        printf 'on\n' > "$STATE"
+        printf 'gaming-toggle: systemd-inhibit no pudo iniciarse; hypridle desactivado\n' >&2
+        notify "Gaming mode ON (inhibidor no disponible)"
+        return 1
+    fi
+
+    printf 'on\n' > "$STATE"
+    printf 'gaming-toggle: systemd-inhibit no disponible; hypridle desactivado\n' >&2
+    notify "Gaming mode ON (systemd-inhibit no disponible)"
+}
+
+turn_off() {
+    mkdir -p "$RUNTIME"
+    cleanup_gaming_inhibitors
+    rm -f "$STATE"
+    start_hypridle
+    notify "Gaming mode OFF"
+}
+
+mkdir -p "$RUNTIME"
+exec 9>"$LOCK"
+flock 9
+
+case "${1:-toggle}" in
+    on) turn_on ;;
+    off) turn_off ;;
+    toggle)
+        if [ -f "$STATE" ]; then
+            turn_off
+        else
+            turn_on
+        fi
+        ;;
+    *)
+        printf 'Usage: %s [on|off|toggle]\n' "$0" >&2
+        exit 2
+        ;;
+esac

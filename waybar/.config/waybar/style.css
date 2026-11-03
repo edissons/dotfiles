@@ -78,7 +78,7 @@ tooltip {
 tooltip label { color: @text; }
 #backlight, #cpu, #memory, #temperature, #custom-updates,
 #custom-keybinds, #custom-wallpaper, #custom-theme,
-#custom-settings, #custom-power {
+#custom-settings, #custom-power, #custom-gaming {
 padding: 0 10px;
 }
 
@@ -87,4 +87,7 @@ padding: 0 10px;
 #custom-power:hover { color: @red; }
 #custom-keybinds:hover, #custom-wallpaper:hover,
 #custom-theme:hover, #custom-settings:hover { color: @accent; }
+#custom-gaming.on { color: @green; }
+#custom-gaming.off { color: @subtext; }
+#custom-gaming:hover { color: @accent; }
 #custom-notifications { padding: 0 10px; }

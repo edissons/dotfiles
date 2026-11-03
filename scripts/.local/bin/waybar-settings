@@ -22,7 +22,6 @@ SETTINGS_CSS = REPO / "waybar/.config/waybar/settings.css"
 THEME_CSS = HOME / ".config/theme/current.css"
 APPEARANCE = HOME / ".local/bin/appearance"
 DOCK_RESTART = HOME / ".local/bin/dock-restart"
-DOCK_SETTINGS = HOME / ".local/bin/dock-settings"
 WAYBAR_RESTART = HOME / ".local/bin/waybar-restart"
 
 ZONES = (("left", "Izquierda"), ("center", "Centro"), ("right", "Derecha"))
@@ -129,7 +128,6 @@ class SettingsPanel(Gtk.Window):
         surface.pack_start(self.section_title("DOCK"), False, False, 0)
         surface.pack_start(self.dock_enabled_row(), False, False, 0)
         surface.pack_start(self.dock_mode_rows(), False, False, 0)
-        surface.pack_start(self.dock_apps_row(), False, False, 0)
 
         self.add(scroller)
 
@@ -215,18 +213,6 @@ class SettingsPanel(Gtk.Window):
 
         self.update_dock_mode_sensitivity()
         return box
-
-    def dock_apps_row(self):
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        row.get_style_context().add_class("setting-row")
-
-        button = Gtk.Button(label="Aplicaciones del dock")
-        button.get_style_context().add_class("secondary-button")
-        button.set_halign(Gtk.Align.START)
-        button.connect("clicked", self.on_dock_apps)
-        row.pack_start(button, False, False, 0)
-
-        return row
 
     def save_modules(self):
         payload = json.dumps(self.modules, indent=2, ensure_ascii=False) + "\n"
@@ -318,9 +304,6 @@ class SettingsPanel(Gtk.Window):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-
-    def on_dock_apps(self, _button):
-        subprocess.Popen([str(DOCK_SETTINGS)], start_new_session=True)
 
     def on_destroy(self, _window):
         if self.restart_source is not None:

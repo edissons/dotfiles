@@ -145,9 +145,15 @@ El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
 
 - **Barra**: una fila por módulo con selector de zona (Izquierda/Centro/Derecha)
   y switch activado/desactivado, más un switch para el auto-ocultado de la barra.
-- **Dock**: switch «Dock activo», radios «Ocultar automáticamente»/«Mostrar
-  siempre» y botón «Aplicaciones del dock». Con el dock desactivado, los radios
-  siguen visibles pero deshabilitados.
+- **Dock**: switch «Dock activo» y radios «Ocultar automáticamente»/«Mostrar
+  siempre». Con el dock desactivado, los radios siguen visibles pero
+  deshabilitados. La entrada «Aplicaciones del dock» vive solo en el menú
+  principal de Ajustes; el panel no repite ese botón.
+
+Visualmente, el panel es una única superficie continua: la ventana aporta el
+fondo y el borde, mientras que el header y los contenedores (`headerbar`,
+`scrolledwindow`, `viewport`, `.settings-surface`) son transparentes. Solo las
+filas (`.setting-row`) se dibujan como tarjetas internas.
 
 El panel guarda `modules.json` de forma atómica, aplica los cambios con un
 reinicio de Waybar debounced de ~250 ms y, si se cierra con un reinicio pendiente,
@@ -539,6 +545,23 @@ auto-ocultado de la barra y los ajustes del dock. El panel usa
 `waybar/.config/waybar/settings.css`, cargado después de
 `~/.config/theme/current.css`.
 
+En la zona derecha, entre `custom/power` y `custom/notifications`, está
+`custom/gaming`. El módulo ejecuta `gaming-status`, que imprime el JSON de Waybar
+(icono, clase `on`/`off` y tooltip). Al hacer clic llama a `gaming-toggle` y envía
+`SIGRTMIN+9` a Waybar para refrescar el estado.
+
+`gaming-toggle` activa o desactiva el modo gaming. Al activarlo detiene `hypridle`
+y mantiene un inhibidor
+`systemd-inhibit --what=idle:sleep:handle-lid-switch`, de modo que quedan
+desactivados idle, bloqueo, suspensión y el cierre por tapa. El estado se guarda
+en `${XDG_RUNTIME_DIR}/gaming-mode.state`. Al desactivarlo libera el inhibidor y
+vuelve a lanzar
+`hypridle -c ~/dotfiles/hypr/.config/hypr/hypridle.conf`.
+
+El botón es idempotente y los cambios se serializan con `flock`, así que pulsarlo
+varias veces no duplica inhibidores. Los alias antiguos de terminal siguen
+existiendo, pero la barra usa el wrapper `gaming-toggle`.
+
 ### Problemas de arranque
 
 Si Waybar no aparece o los módulos de workspace no se actualizan, revisar:
@@ -708,6 +731,11 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - `scripts/.local/bin/dock-restart`: nwg-dock; respeta `dock_enabled` y
   `dock_autohide`.
 - `scripts/.local/bin/dock-settings`: aplicaciones fijadas del dock.
+- `scripts/.local/bin/gaming-toggle`: activa, desactiva o alterna el modo gaming
+  (`on|off|toggle`); usa `flock`, detiene/reanuda `hypridle` y mantiene el
+  inhibidor de idle/suspensión/tapa.
+- `scripts/.local/bin/gaming-status`: emite el JSON de estado para
+  `custom/gaming` de Waybar.
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché

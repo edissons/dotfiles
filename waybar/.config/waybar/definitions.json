@@ -197,6 +197,14 @@
     "tooltip": false,
     "on-click": "$HOME/.local/bin/power-menu"
   },
+  "custom/gaming": {
+    "exec": "$HOME/.local/bin/gaming-status",
+    "return-type": "json",
+    "signal": 9,
+    "format": "{text}",
+    "tooltip": true,
+    "on-click": "$HOME/.local/bin/gaming-toggle; pkill -SIGRTMIN+9 -x waybar"
+  },
   "custom/notifications": {
     "exec": "swaync-client -swb",
     "return-type": "json",

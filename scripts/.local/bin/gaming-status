@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -u
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+STATE="$RUNTIME/gaming-mode.state"
+
+if [ -f "$STATE" ]; then
+    class="on"
+    tooltip="Gaming mode: idle, suspensión y bloqueo desactivados"
+else
+    class="off"
+    tooltip="Gaming mode: idle, suspensión y bloqueo activados"
+fi
+
+printf '{"text":"󰊴","class":"%s","tooltip":"%s"}\n' "$class" "$tooltip"
