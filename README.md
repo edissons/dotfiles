@@ -1,14 +1,137 @@
-# dotfiles
+# Glasshouse
 
-Configuración personal de Arch Linux + Hyprland con estética macOS/Liquid Glass.
-Incluye Hyprland, Hyprlock, Hypridle, Waybar, SwayNC, Rofi, nwg-dock-hyprland,
-Kitty, tema SDDM propio y un sistema de tema claro/oscuro compartido.
+Configuración personal de **Arch Linux + Hyprland** con estética macOS/Liquid
+Glass. Incluye una sesión Hyprland en Lua, Waybar con panel de ajustes GTK3,
+Rofi, Kitty, SwayNC, nwg-dock, Hyprlock/Hypridle, un tema propio de SDDM y una
+paleta clara/oscura compartida por todas las piezas.
 
-Casi toda la personalización (fondo de escritorio, avatar, fondo y desenfoque del
-bloqueo y del login, módulos de la barra) se hace desde un único menú de
-**Ajustes**: botón de engranaje de Waybar o `SUPER+,`.
+El repositorio está pensado para vivir en `~/dotfiles`: los scripts de sesión y
+el instalador asumen esa ruta.
 
-## Arquitectura
+## Vista previa
+
+**Escritorio** — Hyprland, Waybar superior, dock inferior y paleta oscura.
+
+<img src="docs/screenshots/desktop.png" alt="Escritorio de Glasshouse con Hyprland, Waybar superior, dock inferior y fondo oscuro" width="900">
+
+**Barra** — píldora de workspaces, reloj y módulos de estado.
+
+<img src="docs/screenshots/waybar.png" alt="Barra de Waybar de Glasshouse con píldora de workspaces, reloj y módulos de sistema" width="900">
+
+**Panel de ajustes** — panel GTK3 «Barra y dock».
+
+<img src="docs/screenshots/settings-panel.png" alt="Panel GTK3 de ajustes de Glasshouse para módulos de Waybar y dock" width="340">
+
+## Qué incluye
+
+| Componente | Qué aporta |
+|---|---|
+| Hyprland en Lua | Sesión `session.lua`, configuración base `hyprland.lua` y atajos/servicios en `daily.lua`. Los `.conf` antiguos quedan archivados en `legacy/` y no se cargan. |
+| Waybar + panel GTK3 | Barra con píldora de workspaces, reloj, estado y menú de engranaje. `waybar-settings` activa, desactiva y mueve módulos, y controla el dock. |
+| Píldora de workspaces | `group/workspaces` muestra un glifo de la ventana activa por workspace; clic enfoca el workspace y, si ya está activo, cicla sus ventanas. |
+| Dock | nwg-dock con aplicaciones fijadas, auto-ocultado y escala de iconos al pasar el cursor. |
+| Modo gaming | `gaming-toggle` detiene Hypridle e inhibe idle, suspensión y cierre por tapa. |
+| Tema claro/oscuro | `theme-toggle` cambia `current.*`, GTK, iconos, Kvantum, Waybar, SwayNC, Kitty y dock desde una sola paleta. |
+| Bloqueo y login | Hyprlock/Hypridle, avatar compartido y tema SDDM `glass` con fondo y desenfoque configurables. |
+| Scripts | Ajustes, fondos, fuentes, avatar, Waybar, dock, energía, capturas y validación. |
+
+## Instalación rápida
+
+Clona el repositorio en `~/dotfiles` (sustituye el marcador por la URL real):
+
+```bash
+git clone <URL-DEL-REPOSITORIO> ~/dotfiles
+cd ~/dotfiles
+```
+
+Revisa primero el plan y luego aplica los cambios de usuario:
+
+```bash
+./install.sh --dry-run --verbose
+./install.sh --yes
+```
+
+El modo por defecto es **solo a nivel de usuario**: crea enlaces simbólicos,
+genera los valores de ejecución que falten (tema actual, `appearance.conf`,
+avatar inicial, archivo de apps fijadas del dock) y construye la configuración
+de Waybar con `waybar-build`. No usa `sudo`.
+
+> `install.sh` exige que el repo esté en `$HOME/dotfiles`. Si está en otra ruta,
+> falla salvo que se pase `--allow-nonstandard`.
+
+### Flags opcionales
+
+Los pasos con privilegios son opt-in:
+
+| Flag | Qué hace | Privilegios |
+|---|---|---|
+| `--with-session` | Instala `/usr/local/bin/hyprland-glass` y la entrada de sesión `/usr/share/wayland-sessions/hyprland-glass.desktop`. | `sudo` |
+| `--with-fonts` | Ejecuta `fonts-install` para instalar SF Pro a nivel de sistema y después `fonts-apply`. Solo si existe `~/.local/share/fonts/San-Francisco-Pro-Fonts-master`. | `sudo` |
+| `--with-sddm` | Instala o actualiza el tema SDDM `glass` con `sddm-install`. Modifica `/etc/sddm.conf` y los archivos del tema. | `sudo` |
+| `--install-deps` | Instala con `pacman` los paquetes de Arch que falten para los comandos requeridos. Pide confirmación; con `--yes` añade `--noconfirm`. | `sudo` |
+| `--allow-nonstandard` | Permite ejecutar el instalador fuera de `~/dotfiles`. Solo para pruebas: los scripts de sesión siguen asumiendo `~/dotfiles`. | — |
+
+Opciones generales: `--dry-run` muestra las acciones sin cambiar nada, `--yes`
+omite las confirmaciones y `--verbose` imprime más detalle.
+
+### Backups y desinstalación
+
+Todo lo que `install.sh` reemplaza **bajo `$HOME`** (enlaces simbólicos,
+archivos regulares y directorios reales) se copia a:
+
+```text
+~/.dotfiles-backup/install-<timestamp>/
+```
+
+Ese directorio —y su `manifest.txt` con la relación destino → backup— solo
+existe si hubo algo que respaldar. Los enlaces correctos no se tocan; los
+enlaces distintos, archivos regulares y directorios reales se respaldan antes de
+sustituirse. Los pasos con privilegios no se guardan aquí: usan sus propios
+respaldos (ver abajo).
+
+Respaldos de los pasos con privilegios:
+
+- `--with-sddm`: `sddm-install` copia el tema instalado a
+  `/var/backups/sddm-themes/glass.<timestamp>` y `/etc/sddm.conf` a
+  `/etc/sddm.conf.bak.<timestamp>`.
+- `--with-session`: `sudo install` sobrescribe
+  `/usr/local/bin/hyprland-glass` y el archivo de sesión de Wayland; no crea
+  respaldo en `~/.dotfiles-backup`.
+
+Para deshacer los enlaces de usuario:
+
+```bash
+./uninstall.sh --dry-run
+./uninstall.sh --yes
+```
+
+`uninstall.sh` solo elimina enlaces simbólicos cuyo destino resuelto está dentro
+del repositorio y bajo `$HOME`. Después restaura las entradas del manifiesto
+cuando el destino está ausente o sigue siendo un enlace al repo. **No** borra
+archivos regulares, directorios reales, enlaces ajenos, datos de ejecución del
+tema, cachés ni cambios de sistema (SDDM, fuentes, sesión en `/usr/local`).
+`uninstall.sh` no revierte esos cambios de sistema. Por defecto usa el backup
+`install-*` más reciente; se puede elegir otro con `--backup PATH`.
+
+### Avisos importantes
+
+- **No ejecutes dos instaladores a la vez.** La v1 no tiene un lock global; los
+  enlaces y backups podrían pisarse.
+- **`install.sh` no escribe ni borra fuera de `$HOME` o del repo.** Antes de
+  crear, reemplazar o eliminar una ruta, comprueba que el padre resuelto siga
+  bajo `$HOME` o bajo el repo, aunque `~/.config`, `~/.local`, `~/.cache`,
+  `~/Pictures` o `~/.dotfiles-backup` sean enlaces simbólicos. Si el padre
+  escapa, aborta en lugar de escribir o borrar; `--allow-nonstandard` no
+  desactiva esta comprobación. Los enlaces respaldados por el repo, como
+  `~/.config/theme -> ~/dotfiles/theme/.config/theme`, siguen permitidos.
+- **`--with-sddm` puede afectar al inicio de sesión.** `sddm-install` modifica
+  `/etc/sddm.conf` y el tema instalado. Ten una TTY disponible (`Ctrl+Alt+F3`)
+  antes de reiniciar. SDDM nunca se reinicia automáticamente.
+- **Las fuentes SF Pro y SF Mono no se redistribuyen** por su licencia. El flag
+  `--with-fonts` usa una copia local; sin ella, el tema cae en las fuentes de
+  respaldo.
+
+## Cómo funciona
 
 La sesión activa usa la configuración del repo, no `~/.config/hypr`:
 
@@ -17,55 +140,70 @@ La sesión activa usa la configuración del repo, no `~/.config/hypr`:
   -> start-hyprland -- -c ~/dotfiles/hypr/.config/hypr/session.lua
 ```
 
-Archivos y rutas activas:
-
-- `~/dotfiles/hypr/.config/hypr/session.lua`: entrada real de la sesión.
-- `~/dotfiles/hypr/.config/hypr/hyprland.lua`: configuración base.
-- `~/dotfiles/hypr/.config/hypr/daily.lua`: atajos y servicios de sesión.
-- `~/dotfiles/hypr/.config/hypr/test.lua`: sesión de prueba aislada.
-- `~/dotfiles/hypr/.config/hypr/legacy/`: `.conf` antiguos archivados; no se cargan.
-- `~/dotfiles/hypr/.config/hypr/hypridle.conf`: bloqueo y suspensión (hyprlang).
-- `~/dotfiles/hypr/.config/hypr/hyprlock.conf`: lockscreen (hyprlang).
-- `~/.config/theme -> ~/dotfiles/theme/.config/theme`: colores y modo.
-- `~/.config/theme/appearance.conf`: ajustes de apariencia (fondos y desenfoque);
-  ignorado por Git.
-- `~/.config/nwg-dock-hyprland -> ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland`.
-- `~/.local/bin/* -> ~/dotfiles/scripts/.local/bin/*`: scripts.
-- Waybar usa `~/.cache/waybar/config.json` generado por `waybar-build`,
-  `~/dotfiles/waybar/.config/waybar/style.css` y
-  `~/dotfiles/waybar/.config/waybar/settings.css` (este último solo para el panel
-  `waybar-settings`).
-- SwayNC se lanza con `-c`/`-s` apuntando al repo.
-- Rofi y Kitty se lanzan con rutas explícitas del repo; nwg-dock usa el enlace
-  `~/.config/nwg-dock-hyprland`.
-
+`hyprland-glass` se instala con `--with-session`. A su vez, `session.lua` carga
+`hyprland.lua` (base), que a su vez carga `daily.lua` (atajos y servicios).
 `~/.config/hypr` contiene configuraciones HyDE antiguas y no es la configuración
-activa. No editar allí esperando cambios en la sesión.
+activa: no edites allí esperando cambios en la sesión.
 
-## Migración a Lua
+### Mapa de enlaces
 
-Hyprland 0.57 ya no lee `.conf`; la sesión usa Lua. La conversión se hace con
-`hyprconf2lua >= 1.7.0` (v1.8.1 probada) y el script del repo:
+| Origen en el repo | Destino |
+|---|---|
+| `theme/.config/theme` | `~/.config/theme` |
+| `nwg-dock-hyprland/.config/nwg-dock-hyprland` | `~/.config/nwg-dock-hyprland` |
+| `kitty/.config/kitty/kitty.conf` | `~/.config/kitty/kitty.conf` |
+| `fastfetch/.config/fastfetch/config.jsonc` | `~/.config/fastfetch/config.jsonc` |
+| `scripts/.local/bin/*` | `~/.local/bin/*` |
+| `theme/.local/bin/theme-toggle` | `~/.local/bin/theme-toggle` |
+| `wallpapers/Pictures` | `~/Pictures` (si no existe) |
+| `wallpapers/Pictures/wallpapers` | `~/Pictures/wallpapers` (si `~/Pictures` ya existe) |
 
-```bash
-cd ~/dotfiles
-./hypr-lua-migrate.sh --force          # migra e instala el lanzador
-./hypr-lua-migrate.sh --force --no-install  # sin tocar /usr/local/bin
-```
+No recrees estos enlaces a mano: `./install.sh --yes` es idempotente y conserva
+lo que ya esté correcto.
 
-El script hace copia en `~/.dotfiles-backup/hypr-lua-<fecha>/`, convierte
-`hyprland` y `daily`, valida con `luac`, archiva los `.conf` en
-`hypr/.config/hypr/legacy/` y deja `hypridle.conf`/`hyprlock.conf` intactos.
-Después valida la sesión sin iniciarla:
+### Runtime y tema
 
-```bash
-Hyprland --verify-config -c ~/dotfiles/hypr/.config/hypr/session.lua
-```
+- `waybar-build` combina `modules.json` y `definitions.json` y genera
+  `~/.cache/waybar/config.json`. `waybar-restart` serializa reinicios con
+  `flock` y escribe el log en `~/.cache/waybar/waybar.log`.
+- `~/.config/theme/mode` guarda el modo activo. `theme-toggle` apunta
+  `current.conf`, `current.css`, `current.lua`, `current.rasi` y `current.kitty`
+  a `theme/<modo>/colors.*`, y propaga el cambio a GTK, iconos, Waybar, SwayNC,
+  Kitty y nwg-dock.
+- `~/.config/theme/appearance.conf` guarda fondos, desenfoque, dock y
+  auto-ocultado de la barra. Está ignorado por Git.
+- `waybar-settings` es un panel GTK3: edita `modules.json` de forma atómica,
+  aplica un reinicio de Waybar debounced de ~250 ms y aplica los cambios del dock
+  al instante con `dock-restart`. Carga `settings.css` después de
+  `~/.config/theme/current.css`.
+- Los scripts de `scripts/.local/bin` y `theme/.local/bin` quedan disponibles en
+  `~/.local/bin` mediante los enlaces del instalador.
 
-Para probar de verdad, usar otro TTY (`Ctrl+Alt+F3`) y ejecutar `hypr-test`;
-dentro, `hyprctl configerrors` debe estar vacío.
+## Cómo se ve
 
-## Dependencias principales
+La personalización cotidiana se hace desde el menú de **Ajustes**: botón de
+engranaje de Waybar o `SUPER+,`.
+
+- **Tema claro/oscuro:** `theme-toggle` (o `SUPER+T`) alterna la paleta y las
+  piezas que la consumen. El lockscreen sigue el modo activo; SDDM se configura
+  aparte con `sddm-install dark|light`.
+- **Menú de Ajustes:** fondos de escritorio, bloqueo y login; desenfoques; avatar
+  de perfil; entrada al panel «Barra y dock» y a las aplicaciones del dock.
+- **Panel «Barra y dock»:** una fila por módulo con zona y switch, switch de
+  auto-ocultado de la barra y controles del dock (activo, ocultar
+  automáticamente o mostrar siempre). La entrada «Aplicaciones del dock» vive
+  solo en el menú principal de Ajustes, no en este panel.
+- **Modo gaming:** el módulo `custom/gaming` de Waybar alterna el modo y muestra
+  el estado con un icono y un tooltip. Detiene Hypridle, inhibe idle, suspensión
+  y cierre por tapa, y guarda el estado en
+  `${XDG_RUNTIME_DIR}/gaming-mode.state`.
+
+Las capturas de [Vista previa](#vista-previa) muestran el resultado: escritorio,
+barra y panel de ajustes.
+
+## Requisitos
+
+Paquetes principales (Arch):
 
 ```text
 hyprland hyprlock hypridle waybar swaync nwg-dock-hyprland
@@ -77,12 +215,15 @@ hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
 kvantum kvantum-qt5 qt5ct qt6ct
 network-manager-applet blueman pacman-contrib libnotify
 python-gobject gtk3
+systemd util-linux
 ```
 
-`waybar-settings` requiere los bindings GTK3 de PyGObject (`python-gobject` +
-`gtk3`).
-
-Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon local).
+- `waybar-settings` requiere los bindings GTK3 de PyGObject (`python-gobject` +
+  `gtk3`).
+- `systemd-inhibit` (paquete `systemd`) es necesario para el modo gaming.
+- `flock` (paquete `util-linux`) serializa reinicios y toggles.
+- Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon
+  local).
 
 Fuentes:
 
@@ -100,30 +241,95 @@ Criterio tipográfico:
 - `JetBrainsMono Nerd Font Mono` sigue como respaldo para los glifos Nerd
   (wifi, batería, iconos) y como monoespaciada de GTK/Qt.
 
-SF Pro no se versiona en el repo. La copia usada está en:
+SF Pro y SF Mono no se versionan en el repo. La copia local de SF Pro está en:
 
 ```text
 ~/.local/share/fonts/San-Francisco-Pro-Fonts-master/
 ```
 
-`SF Mono` tampoco se versiona. Está instalada a nivel de usuario en
-`~/.local/share/fonts/SF-Mono/` (12 OTFs) y su licencia de Apple restringe la
+`SF Mono` está instalada a nivel de usuario en
+`~/.local/share/fonts/SF-Mono/` (12 OTFs); su licencia de Apple restringe la
 redistribución, así que no se incluye en el repo.
 
-## Instalación de symlinks
+## Estructura del repositorio
 
-Si faltan en un equipo nuevo (también al añadir scripts nuevos):
+| Ruta | Contenido |
+|---|---|
+| `hypr/` | Sesión y configuración de Hyprland en Lua, más `hyprlock.conf`, `hypridle.conf` y los `.conf` archivados en `legacy/`. |
+| `waybar/` | `style.css`, `settings.css`, `modules.json` y `definitions.json`. |
+| `theme/` | Paletas `dark/` y `light/`, avatares base y `theme-toggle`. |
+| `rofi/` | Lanzador y menú de energía. |
+| `kitty/` | Configuración de la terminal. |
+| `swaync/` | Estilos de notificaciones. |
+| `nwg-dock-hyprland/` | Estilos del dock. |
+| `sddm/glass/` | Tema del greeter (QML, `theme.conf` e iconos). |
+| `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar y energía. |
+| `wallpapers/` | Fondos de ejemplo. |
+| `fastfetch/` | Configuración de Fastfetch. |
+| `docs/screenshots/` | Capturas usadas en este README. |
+| `install.sh` | Instalador v1: enlaces, runtime, Waybar y flags privilegiados opt-in. |
+| `uninstall.sh` | Elimina solo enlaces al repo y restaura backups del instalador. |
+| `hypr-lua-migrate.sh` | Migración de Hyprland a Lua y archivado de los `.conf`. |
+
+## Solución de problemas
+
+### Waybar no aparece
+
+Comprueba el proceso, las capas de Wayland y el log:
 
 ```bash
-ln -sfn ~/dotfiles/theme/.config/theme ~/.config/theme
-ln -sfn ~/dotfiles/nwg-dock-hyprland/.config/nwg-dock-hyprland ~/.config/nwg-dock-hyprland
-mkdir -p ~/.config/kitty ~/.config/fastfetch
-ln -sfn ~/dotfiles/kitty/.config/kitty/kitty.conf ~/.config/kitty/kitty.conf
-ln -sfn ~/dotfiles/fastfetch/.config/fastfetch/config.jsonc ~/.config/fastfetch/config.jsonc
-for f in ~/dotfiles/scripts/.local/bin/*; do
-  ln -sfn "$f" "$HOME/.local/bin/$(basename "$f")"
-done
+pgrep -x waybar
+hyprctl layers | grep -A2 'namespace: waybar'
+cat ~/.cache/waybar/waybar.log
 ```
+
+Si no está, reiníciala:
+
+```bash
+~/.local/bin/waybar-restart
+```
+
+`waybar-restart` vacía el log en cada reinicio. Los mensajes
+`waybar-restart: timed out waiting for waybar layer` y
+`waybar-restart: waybar exited during startup` indican que los daemons de
+workspaces y auto-ocultado no se iniciaron.
+
+### El panel de ajustes no abre
+
+```bash
+~/.local/bin/waybar-settings
+```
+
+Requiere PyGObject con GTK3 (`python-gobject` + `gtk3`). Si falla, revisa esas
+dependencias. La entrada «Aplicaciones del dock» está en el menú principal de
+Ajustes (`settings-menu`), no en el panel.
+
+### El modo gaming no responde
+
+```bash
+~/.local/bin/gaming-toggle on
+~/.local/bin/gaming-toggle off
+~/.local/bin/gaming-toggle toggle
+cat "${XDG_RUNTIME_DIR}/gaming-mode.state"
+```
+
+El estado se guarda en `${XDG_RUNTIME_DIR}/gaming-mode.state`. Necesita
+`systemd-inhibit` (paquete `systemd`) y `flock` (paquete `util-linux`). Si
+`systemd-inhibit` no está disponible, `gaming-toggle` desactiva Hypridle y avisa
+de que el inhibidor no pudo iniciarse.
+
+### SDDM
+
+Si el login no se ve como esperas, no reinicies SDDM a ciegas: cambia a una TTY
+(`Ctrl+Alt+F3`), revisa `/etc/sddm.conf` y los backups de `sddm-install`, y
+consulta el journal:
+
+```bash
+journalctl -u sddm -b --no-pager | grep -Ei 'theme|qml|error|warning' | tail -50
+```
+
+`--with-sddm` nunca reinicia SDDM; el greeter real solo se ve tras reiniciar el
+equipo o el servicio de forma manual y consciente.
 
 ## Ajustes de apariencia
 
@@ -139,7 +345,7 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Desenfoque del bloqueo | Activa o desactiva el desenfoque del fondo de hyprlock. |
 | Desenfoque del inicio de sesión | Activa o desactiva el desenfoque del fondo de SDDM y sincroniza (pide `sudo`). |
 | Barra y dock | Abre el panel GTK3 `waybar-settings`: módulos de la barra, auto-ocultado y ajustes del dock. |
-| Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. |
+| Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. Esta entrada vive solo en el menú principal de Ajustes. |
 
 El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
 
@@ -390,6 +596,9 @@ El tema está en `sddm/glass` y se instala en
 ~/.local/bin/sddm-install dark
 ```
 
+`--with-sddm` ejecuta este paso con `sudo` tras pedir confirmación. SDDM no se
+reinicia automáticamente.
+
 ### Causa del tema anterior
 
 En esta versión de SDDM el orden de precedencia es:
@@ -562,20 +771,6 @@ El botón es idempotente y los cambios se serializan con `flock`, así que pulsa
 varias veces no duplica inhibidores. Los alias antiguos de terminal siguen
 existiendo, pero la barra usa el wrapper `gaming-toggle`.
 
-### Problemas de arranque
-
-Si Waybar no aparece o los módulos de workspace no se actualizan, revisar:
-
-```bash
-cat ~/.cache/waybar/waybar.log
-hyprctl layers | grep -A2 'namespace: waybar'
-```
-
-`waybar-restart` vacía el log en cada reinicio. Los mensajes
-`waybar-restart: timed out waiting for waybar layer` y
-`waybar-restart: waybar exited during startup` indican que los daemons no se
-iniciaron.
-
 ## SwayNC
 
 Archivo: `swaync/.config/swaync/style.css`.
@@ -658,7 +853,9 @@ Recargar el dock:
 ## Fastfetch
 
 Archivo: `fastfetch/.config/fastfetch/config.jsonc`, enlazado como
-`~/.config/fastfetch/config.jsonc`:
+`~/.config/fastfetch/config.jsonc` por `install.sh`.
+
+Si necesitas recrear el enlace a mano (fallback de `install.sh`):
 
 ```bash
 ln -sfn ~/dotfiles/fastfetch/.config/fastfetch/config.jsonc ~/.config/fastfetch/config.jsonc
@@ -710,6 +907,40 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 - La configuración de Hyprland ya está en Lua; los `.conf` quedan archivados en
   `hypr/.config/hypr/legacy/` y no se cargan.
 
+## Atajos de teclado
+
+Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
+
+| Atajo | Acción |
+|---|---|
+| `SUPER+Return` | Abrir Kitty. |
+| `SUPER+Space` | Lanzador Rofi (`drun`). |
+| `SUPER+,` | Menú de Ajustes (`settings-menu`). |
+| `SUPER+T` | Alternar tema claro/oscuro. |
+| `SUPER+L` | Bloquear la pantalla. |
+| `SUPER+E` / `SUPER+B` | Abrir Dolphin / Brave. |
+| `SUPER+Q` | Cerrar la ventana activa. |
+| `SUPER+F` / `SUPER+V` | Pantalla completa / ventana flotante. |
+| `SUPER+J` | Alternar split. |
+| `SUPER+flechas` | Mover el foco entre ventanas. |
+| `SUPER+SHIFT+flechas` | Mover la ventana activa. |
+| `SUPER+CTRL+flechas` | Redimensionar la ventana activa. |
+| `SUPER+1…4` | Ir al workspace 1–4. |
+| `SUPER+SHIFT+1…4` | Mover la ventana al workspace 1–4. |
+| `SUPER+mouse_down` / `mouse_up` | Workspace siguiente / anterior. |
+| `SUPER+SHIFT+W` | Elegir fondo de escritorio. |
+| `SUPER+SHIFT+B` | Reiniciar Waybar. |
+| `SUPER+SHIFT+D` | Reiniciar el dock. |
+| `SUPER+SHIFT+P` | Menú de energía. |
+| `SUPER+SHIFT+V` | Historial del portapapeles. |
+| `SUPER+SHIFT+E` | Salir de Hyprland. |
+| `SUPER+N` | Alternar notificaciones (SwayNC). |
+| `SUPER+F1` | Visor de atajos (`keybinds-viewer`). |
+| `Print` | Captura de una región al portapapeles. |
+| `SHIFT+Print` | Captura de pantalla completa a `~/Pictures/Screenshots/`. |
+| `SUPER+SHIFT+S` | Captura de una región a `~/Pictures/Screenshots/`. |
+| `XF86Audio*` / `XF86MonBrightness*` | Volumen, multimedia y brillo. |
+
 ## Scripts
 
 - `scripts/.local/bin/settings-menu`: menú de Ajustes (engranaje de Waybar o
@@ -744,6 +975,29 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
   `hypr-test`, `hyprland-glass`.
 - `hypr-lua-migrate.sh` (raíz del repo): migra Hyprland a Lua, valida, archiva
   los `.conf` y actualiza el lanzador.
+
+## Migración a Lua
+
+Hyprland 0.57 ya no lee `.conf`; la sesión usa Lua. La conversión se hace con
+`hyprconf2lua >= 1.7.0` (v1.8.1 probada) y el script del repo:
+
+```bash
+cd ~/dotfiles
+./hypr-lua-migrate.sh --force          # migra e instala el lanzador
+./hypr-lua-migrate.sh --force --no-install  # sin tocar /usr/local/bin
+```
+
+El script hace copia en `~/.dotfiles-backup/hypr-lua-<fecha>/`, convierte
+`hyprland` y `daily`, valida con `luac`, archiva los `.conf` en
+`hypr/.config/hypr/legacy/` y deja `hypridle.conf`/`hyprlock.conf` intactos.
+Después valida la sesión sin iniciarla:
+
+```bash
+Hyprland --verify-config -c ~/dotfiles/hypr/.config/hypr/session.lua
+```
+
+Para probar de verdad, usar otro TTY (`Ctrl+Alt+F3`) y ejecutar `hypr-test`;
+dentro, `hyprctl configerrors` debe estar vacío.
 
 ## Validación
 
@@ -837,8 +1091,8 @@ for f in ~/dotfiles/hypr/.config/hypr/*.lua; do luac -p "$f"; done
 hyprctl configerrors
 ```
 
-En un TTY aparte, `hypr-test` debe abrir la sesión de prueba y `hyprctl
-configerrors` debe quedar vacío.
+En un TTY aparte, `hypr-test` debe abrir la sesión de prueba y
+`hyprctl configerrors` debe quedar vacío.
 
 Antes de commitear:
 
@@ -854,6 +1108,16 @@ git check-ignore -v theme/.config/theme/appearance.conf theme/.config/theme/avat
 ```
 
 ## Rollback
+
+Backups del instalador:
+
+```text
+~/.dotfiles-backup/install-<timestamp>/
+  manifest.txt
+```
+
+`./uninstall.sh --yes` elimina solo los enlaces al repo y restaura las entradas
+del manifiesto cuando es seguro. No revierte cambios de sistema.
 
 Revisar el commit de esta fase:
 

@@ -201,43 +201,10 @@ radiobutton:disabled {
     color: @subtext;
 }
 
-/* Secondary actions, e.g. "Aplicaciones del dock" */
-.secondary-button {
-    min-width: 0;
-    min-height: 0;
-    padding: 6px 12px;
-    background-color: @surface;
-    background-image: none;
-    border: 1px solid @border;
-    border-radius: 10px;
-    color: @text;
-    font-weight: 500;
-    box-shadow: none;
-    transition: background-color 140ms ease, border-color 140ms ease;
-}
-
-.secondary-button:hover {
-    background-color: @border;
-}
-
-.secondary-button:active {
-    background-color: @border;
-}
-
-.secondary-button:disabled {
-    background-color: alpha(@text, 0.04);
-    color: @subtext;
-}
-
-button:disabled label {
-    color: @subtext;
-}
-
 /* Keyboard focus */
 combobox button:focus,
 radiobutton:focus,
-switch:focus,
-.secondary-button:focus {
+switch:focus {
     outline-style: solid;
     outline-width: 2px;
     outline-color: alpha(@accent, 0.55);
