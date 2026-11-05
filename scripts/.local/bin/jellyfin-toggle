@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+set -u
+
+SERVICE="jellyfin.service"
+URL="http://localhost:8096"
+
+usage() {
+    cat <<'EOF'
+Usage: jellyfin-toggle [on|off|toggle|status]
+
+  on       Start jellyfin.service and print the local URL.
+  off      Stop jellyfin.service.
+  toggle   Switch between on and off.
+  status   Show service state, memory and PID.
+EOF
+}
+
+is_active() {
+    systemctl is-active --quiet "$SERVICE"
+}
+
+run_root() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif command -v pkexec >/dev/null 2>&1 &&
+        [[ -n ${WAYLAND_DISPLAY:-}${DISPLAY:-} ]]; then
+        pkexec "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf 'jellyfin-toggle: se requiere root y no hay pkexec ni sudo\n' >&2
+        return 1
+    fi
+}
+
+start_service() {
+    if is_active; then
+        printf 'Jellyfin ya está activo: %s\n' "$URL"
+        return 0
+    fi
+    if run_root systemctl start "$SERVICE"; then
+        printf 'Jellyfin ON: %s\n' "$URL"
+        return 0
+    fi
+    printf 'jellyfin-toggle: no se pudo iniciar %s\n' "$SERVICE" >&2
+    return 1
+}
+
+stop_service() {
+    if ! is_active; then
+        printf 'Jellyfin ya está parado\n'
+        return 0
+    fi
+    if run_root systemctl stop "$SERVICE"; then
+        printf 'Jellyfin OFF\n'
+        return 0
+    fi
+    printf 'jellyfin-toggle: no se pudo parar %s\n' "$SERVICE" >&2
+    return 1
+}
+
+show_status() {
+    if is_active; then
+        printf 'Jellyfin: on\n'
+    else
+        printf 'Jellyfin: off\n'
+    fi
+    systemctl show "$SERVICE" \
+        -p ActiveState -p SubState -p MainPID -p MemoryCurrent 2>/dev/null || true
+    if is_active; then
+        printf 'URL: %s\n' "$URL"
+    fi
+}
+
+case "${1:-status}" in
+    on)
+        start_service
+        ;;
+    off)
+        stop_service
+        ;;
+    toggle)
+        if is_active; then
+            stop_service
+        else
+            start_service
+        fi
+        ;;
+    status)
+        show_status
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

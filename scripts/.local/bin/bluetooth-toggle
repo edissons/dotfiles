@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+set -u
+
+SERVICE="bluetooth.service"
+
+usage() {
+    cat <<'EOF'
+Usage: bluetooth-toggle [on|off|toggle|status|manager]
+
+  on       Unblock the adapter and start bluetooth.service.
+  off      Stop bluetooth.service and soft-block the adapter.
+  toggle   Switch between on and off.
+  status   Show service and rfkill state.
+  manager  Start the service and open blueman-manager (or bluetoothctl).
+EOF
+}
+
+is_active() {
+    systemctl is-active --quiet "$SERVICE"
+}
+
+run_root() {
+    if (( EUID == 0 )); then
+        "$@"
+    elif command -v pkexec >/dev/null 2>&1 &&
+        [[ -n ${WAYLAND_DISPLAY:-}${DISPLAY:-} ]]; then
+        pkexec "$@"
+    elif command -v sudo >/dev/null 2>&1; then
+        sudo "$@"
+    else
+        printf 'bluetooth-toggle: se requiere root y no hay pkexec ni sudo\n' >&2
+        return 1
+    fi
+}
+
+unblock() {
+    if command -v rfkill >/dev/null 2>&1; then
+        run_root rfkill unblock bluetooth 2>/dev/null ||
+            printf 'bluetooth-toggle: no se pudo desbloquear el adaptador\n' >&2
+    fi
+}
+
+block() {
+    if command -v rfkill >/dev/null 2>&1; then
+        run_root rfkill block bluetooth 2>/dev/null ||
+            printf 'bluetooth-toggle: no se pudo bloquear el adaptador\n' >&2
+    fi
+}
+
+start_service() {
+    if is_active; then
+        printf 'Bluetooth ya está activo\n'
+        return 0
+    fi
+    unblock
+    if run_root systemctl start "$SERVICE"; then
+        printf 'Bluetooth ON\n'
+        return 0
+    fi
+    printf 'bluetooth-toggle: no se pudo iniciar %s\n' "$SERVICE" >&2
+    return 1
+}
+
+stop_service() {
+    if ! is_active; then
+        printf 'Bluetooth ya está apagado\n'
+        return 0
+    fi
+    if run_root systemctl stop "$SERVICE"; then
+        block
+        printf 'Bluetooth OFF\n'
+        return 0
+    fi
+    printf 'bluetooth-toggle: no se pudo parar %s\n' "$SERVICE" >&2
+    return 1
+}
+
+show_status() {
+    if is_active; then
+        printf 'Bluetooth: on\n'
+    else
+        printf 'Bluetooth: off\n'
+    fi
+    systemctl status "$SERVICE" --no-pager -n 3 2>/dev/null || true
+    if command -v rfkill >/dev/null 2>&1; then
+        rfkill list bluetooth 2>/dev/null || true
+    fi
+}
+
+open_manager() {
+    if ! is_active && ! start_service; then
+        return 1
+    fi
+    if command -v blueman-manager >/dev/null 2>&1; then
+        setsid blueman-manager >/dev/null 2>&1 9>&- &
+        printf 'blueman-manager abierto\n'
+    elif command -v bluetoothctl >/dev/null 2>&1; then
+        exec bluetoothctl
+    else
+        printf 'bluetooth-toggle: instala blueman o bluez-utils para gestionar dispositivos\n' >&2
+        return 1
+    fi
+}
+
+case "${1:-status}" in
+    on)
+        start_service
+        ;;
+    off)
+        stop_service
+        ;;
+    toggle)
+        if is_active; then
+            stop_service
+        else
+            start_service
+        fi
+        ;;
+    status)
+        show_status
+        ;;
+    manager)
+        open_manager
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac

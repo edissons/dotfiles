@@ -251,6 +251,78 @@ SF Pro y SF Mono no se versionan en el repo. La copia local de SF Pro está en:
 `~/.local/share/fonts/SF-Mono/` (12 OTFs); su licencia de Apple restringe la
 redistribución, así que no se incluye en el repo.
 
+## Servicios opcionales
+
+Glasshouse arranca con una sesión ligera: los servicios que no se usan a diario
+quedan desactivados por defecto. `scripts/system/optional-services` los agrupa,
+muestra su estado y permite aplicarlos o revertirlos. No se desinstala ningún
+paquete y todo cambio es reversible.
+
+Unidades desactivadas por `apply`:
+
+| Unidad | Motivo |
+|---|---|
+| `bluetooth.service` | Bluetooth es manual; ver `bluetooth-toggle`. |
+| `jellyfin.service` | Servidor multimedia bajo demanda; ver `jellyfin-toggle`. |
+| `cups.service`, `cups.socket`, `cups.path` | No se usa impresora. |
+| `avahi-daemon.service`, `avahi-daemon.socket` | No se usa Chromecast/mDNS. |
+| `waydroid-nat.service` | No se usa Waydroid. |
+| `libvirtd.service` y sockets de libvirt (`libvirtd*`, `virtlockd*`, `virtlogd*`) | No se usan máquinas virtuales. |
+| `NetworkManager-wait-online.service` | No hace falta esperar la red al arrancar. |
+
+Comandos:
+
+```bash
+./scripts/system/optional-services status
+./scripts/system/optional-services --dry-run apply
+sudo ./scripts/system/optional-services apply
+sudo ./scripts/system/optional-services revert
+```
+
+`status` y `--dry-run` funcionan como usuario; `apply` y `revert` requieren
+`sudo`. Las unidades que no están instaladas se omiten.
+
+### Bluetooth y Jellyfin manuales
+
+```bash
+~/.local/bin/bluetooth-toggle on|off|toggle|status|manager
+~/.local/bin/jellyfin-toggle on|off|toggle|status
+```
+
+Bluetooth no arranca applets ni conecta dispositivos automáticamente: `daily.lua`
+ya no lanza `blueman-applet` y se activa solo con `bluetooth-toggle on`.
+`manager` abre `blueman-manager` o, si no está, `bluetoothctl`. Jellyfin se
+inicia bajo demanda y `on` imprime `http://localhost:8096`. Arrancar o parar
+estos servicios pide autenticación por Polkit (`pkexec`) si no se ejecuta como
+root; `status` funciona sin privilegios.
+
+`obex.service` es un servicio de usuario y `optional-services` no lo gestiona; se
+detuvo con:
+
+```bash
+systemctl --user stop obex.service
+```
+
+También se añadieron overrides `Hidden=true` en `~/.config/autostart/` para
+arch-update-tray, blueman, baloo_file, geoclue-demo-agent, orca-autostart,
+print-applet, polkit-kde-authentication-agent-1 y xdman.
+
+### Reversión
+
+```bash
+sudo ./scripts/system/optional-services revert
+```
+
+Después, si hace falta, borrar los overrides `~/.config/autostart/*.desktop` y
+volver a arrancar el servicio de usuario:
+
+```bash
+systemctl --user start obex.service
+```
+
+No se elimina ningún paquete. VirtualBox no se toca: se instala o desinstala a
+mano y `virtvboxd` ya está desactivado.
+
 ## Estructura del repositorio
 
 | Ruta | Contenido |
@@ -264,6 +336,7 @@ redistribución, así que no se incluye en el repo.
 | `nwg-dock-hyprland/` | Estilos del dock. |
 | `sddm/glass/` | Tema del greeter (QML, `theme.conf` e iconos). |
 | `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar y energía. |
+| `scripts/system/` | Servicios opcionales (`optional-services`). |
 | `wallpapers/` | Fondos de ejemplo. |
 | `fastfetch/` | Configuración de Fastfetch. |
 | `docs/screenshots/` | Capturas usadas en este README. |
@@ -967,12 +1040,18 @@ Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
   inhibidor de idle/suspensión/tapa.
 - `scripts/.local/bin/gaming-status`: emite el JSON de estado para
   `custom/gaming` de Waybar.
+- `scripts/.local/bin/bluetooth-toggle`: activa, desactiva o alterna Bluetooth y
+  abre el gestor (`on|off|toggle|status|manager`).
+- `scripts/.local/bin/jellyfin-toggle`: inicia, para o alterna Jellyfin y muestra
+  `http://localhost:8096` (`on|off|toggle|status`).
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
 - `scripts/.local/bin/power-menu`, `keybinds-viewer`, `updates-count`,
   `hypr-test`, `hyprland-glass`.
+- `scripts/system/optional-services`: desactiva o reactiva los servicios
+  opcionales (`status|apply|revert`, `--dry-run`).
 - `hypr-lua-migrate.sh` (raíz del repo): migra Hyprland a Lua, valida, archiva
   los `.conf` y actualiza el lanzador.
 

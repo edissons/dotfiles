@@ -1,0 +1,122 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Optional services disabled for a low-end Glasshouse session.
+# Run with sudo for apply/revert. `status` and `--dry-run` work as a user.
+
+UNITS=(
+    jellyfin.service
+    bluetooth.service
+    cups.service
+    cups.socket
+    cups.path
+    avahi-daemon.service
+    avahi-daemon.socket
+    waydroid-nat.service
+    libvirtd.service
+    libvirtd.socket
+    libvirtd-ro.socket
+    libvirtd-admin.socket
+    virtlockd.socket
+    virtlogd.socket
+    virtlockd-admin.socket
+    virtlogd-admin.socket
+    NetworkManager-wait-online.service
+)
+
+DRY_RUN=0
+
+usage() {
+    cat <<'EOF'
+Usage: optional-services [--dry-run] status|apply|revert
+
+  status    Show enabled/active state for each optional unit.
+  apply     Disable and stop optional units.
+  revert    Enable and start optional units again.
+  --dry-run Print actions without changing anything.
+
+Requires root for apply/revert.
+EOF
+}
+
+run() {
+    printf '+'
+    printf ' %q' "$@"
+    printf '\n'
+    if (( ! DRY_RUN )); then
+        "$@"
+    fi
+}
+
+unit_exists() {
+    systemctl cat "$1" >/dev/null 2>&1
+}
+
+show_status() {
+    local unit
+    printf '%-38s %-10s %s\n' "UNIT" "ENABLED" "ACTIVE"
+    for unit in "${UNITS[@]}"; do
+        if unit_exists "$unit"; then
+            printf '%-38s %-10s %s\n' \
+                "$unit" \
+                "$(systemctl is-enabled "$unit" 2>/dev/null || true)" \
+                "$(systemctl is-active "$unit" 2>/dev/null || true)"
+        else
+            printf '%-38s %-10s %s\n' "$unit" "missing" "-"
+        fi
+    done
+}
+
+apply_units() {
+    local unit
+    for unit in "${UNITS[@]}"; do
+        if unit_exists "$unit"; then
+            run systemctl disable --now "$unit"
+        else
+            printf 'skip missing: %s\n' "$unit"
+        fi
+    done
+}
+
+revert_units() {
+    local unit
+    for unit in "${UNITS[@]}"; do
+        if unit_exists "$unit"; then
+            run systemctl enable --now "$unit"
+        else
+            printf 'skip missing: %s\n' "$unit"
+        fi
+    done
+}
+
+while (($# > 0)); do
+    case "$1" in
+        --dry-run) DRY_RUN=1 ;;
+        -h|--help|help) usage; exit 0 ;;
+        status|apply|revert) ACTION="$1" ;;
+        *) usage >&2; exit 2 ;;
+    esac
+    shift
+done
+
+ACTION="${ACTION:-status}"
+
+case "$ACTION" in
+    status)
+        show_status
+        ;;
+    apply)
+        if (( EUID != 0 && ! DRY_RUN )); then
+            printf 'optional-services: apply requires root (use sudo)\n' >&2
+            exit 1
+        fi
+        apply_units
+        ;;
+    revert)
+        if (( EUID != 0 && ! DRY_RUN )); then
+            printf 'optional-services: revert requires root (use sudo)\n' >&2
+            exit 1
+        fi
+        revert_units
+        ;;
+esac
