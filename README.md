@@ -222,6 +222,8 @@ systemd util-linux
   `gtk3`).
 - `systemd-inhibit` (paquete `systemd`) es necesario para el modo gaming.
 - `flock` (paquete `util-linux`) serializa reinicios y toggles.
+- `socat` es opcional: permite a `workspace-pill` escuchar eventos de Hyprland;
+  sin él usa polling de 1 s.
 - Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon
   local).
 
@@ -791,8 +793,9 @@ Archivo: `waybar/.config/waybar/style.css`.
   iconos GTK; el mapa de clases está en
   `scripts/.local/bin/workspace-pill`. Click enfoca el workspace y, si ya está
   activo, cicla sus ventanas. `waybar-restart` inicia `workspace-pill daemon`,
-  que actualiza los cuatro módulos con `SIGRTMIN+8`; se mantiene
-  `hyprland/window` para el título.
+  que escucha `.socket2.sock` de Hyprland y actualiza los cuatro módulos con
+  `SIGRTMIN+8` solo cuando cambia el estado; sin `socat` cae a polling de 1 s.
+  Se mantiene `hyprland/window` para el título.
 - Los iconos Nerd usan el fallback Mono.
 - El resto de módulos heredan la fuente global.
 - `bar-autohide` oculta la barra con `SIGUSR1` cuando el cursor baja de
@@ -809,7 +812,9 @@ La configuración se genera con:
 
 `waybar-build` combina `modules.json` y `definitions.json` en
 `~/.cache/waybar/config.json`. La lista `disabled` de `modules.json` es
-`[temperature, bluetooth, network]`.
+`[temperature, bluetooth, network]`. Para reducir wakeups, `cpu` y `memory`
+usan intervalos de 10 s, y `custom/updates` de 6 h; el resto de módulos usan
+eventos o intervalos propios.
 
 `waybar-restart` usa `flock` para serializar reinicios y escribe la salida de
 Waybar en `~/.cache/waybar/waybar.log`. Antes de lanzar `bar-autohide` y
