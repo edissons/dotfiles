@@ -454,6 +454,7 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 
 | Clave | Valores | Por defecto |
 |---|---|---|
+| `wallpaper_dir` | ruta de una carpeta | `~/Pictures/wallpapers` |
 | `lock_bg` | `desktop` o ruta de una imagen | `desktop` |
 | `lock_blur` | `on` / `off` | `off` |
 | `sddm_bg` | `desktop` o ruta de una imagen | `desktop` |
@@ -462,6 +463,10 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 | `dock_autohide` | `on` / `off` | `on` |
 | `bar_autohide` | `on` / `off` | `off` |
 | `low_end` | `on` / `off` | `off` |
+
+`wallpaper_dir` es la raíz del selector de fondos. Cada subcarpeta directa que
+contiene imágenes se trata como una categoría, y las categorías nuevas se
+detectan automáticamente al abrir el menú.
 
 Con `desktop`, el bloqueo usa siempre el wallpaper actual
 (`~/.cache/current-wallpaper`). SDDM usa el wallpaper que había al ejecutar
@@ -492,6 +497,43 @@ Desde la terminal:
 ~/.local/bin/appearance get lock_blur off
 ~/.local/bin/appearance-wall lock
 ```
+
+### Wallpapers por categorías
+
+`wallpaper-pick` (`~/.local/bin/wallpaper-pick`) es el selector Rofi en dos pasos
+que comparten el escritorio, el bloqueo y el login:
+
+1. **Categorías:** subcarpetas directas de `wallpaper_dir` que contienen al menos
+   una imagen, más «Todas las imágenes» y, si hay imágenes sueltas en la raíz,
+   «Sin categoría».
+2. **Imágenes de la categoría elegida.** Dentro de una categoría la búsqueda es
+   recursiva; en «Sin categoría» solo se listan los archivos de la raíz.
+
+- Las categorías nuevas se detectan solas: basta con crear una subcarpeta con
+  imágenes.
+- Extensiones admitidas: `.jpg`, `.jpeg`, `.png` y `.webp`.
+- `--desktop` añade «Igual que el escritorio»; `--custom` añade «Otra imagen…»
+  (la copia a `~/.config/theme/backgrounds/`); `--prompt TEXTO` cambia el título
+  del menú.
+
+`wallpaper-select` usa `wallpaper-pick` y guarda la elección en
+`~/.cache/current-wallpaper`. `wallpaper-select restore` valida esa caché y, si
+la ruta ya no existe, cae a `wallpaper_dir/wall.jpg` o a la primera imagen
+encontrada.
+
+`settings-menu` usa el mismo helper para «Fondo de la pantalla de bloqueo» y
+«Fondo del inicio de sesión», conservando «Igual que el escritorio» y «Otra
+imagen…». El fondo de escritorio sigue disponible con `SUPER+SHIFT+W`.
+
+```bash
+~/.local/bin/appearance set wallpaper_dir "$HOME/Descargas/Super PACK Wallpaper By Settings PC/Super PACK Wallpaper By Settings PC"
+~/.local/bin/wallpaper-select
+~/.local/bin/wallpaper-pick --desktop --custom --prompt "Fondo de bloqueo"
+```
+
+El pack externo tiene un nivel duplicado. Hay que apuntar `wallpaper_dir` al
+nivel interno, el que contiene `Aesthetic/`, `Mac OS/`, `MINIMALISTA/` y
+`Windows/`; el nivel externo no agrupa esas carpetas como categorías.
 
 ## Modo bajo consumo
 
@@ -1082,6 +1124,8 @@ Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
   `http://localhost:8096` (`on|off|toggle|status`).
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
+- `scripts/.local/bin/wallpaper-pick`: selector Rofi en dos pasos (categoría →
+  imagen) sobre `wallpaper_dir`; admite `--desktop`, `--custom` y `--prompt`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
 - `scripts/.local/bin/power-menu`, `keybinds-viewer`, `updates-count`,
@@ -1161,6 +1205,18 @@ Ajustes de apariencia y desenfoque del bloqueo:
 cat ~/.config/theme/appearance.conf
 ~/.local/bin/appearance-wall lock
 ```
+
+Wallpapers por categorías:
+
+```bash
+WALL_DIR="$(~/.local/bin/appearance get wallpaper_dir "$HOME/Pictures/wallpapers")"
+test -d "$WALL_DIR" && echo "OK: $WALL_DIR"
+find "$WALL_DIR" -mindepth 1 -maxdepth 1 -type d -exec sh -c \
+  'find "$1" -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" -o -iname "*.webp" \) -print -quit | grep -q . && echo "categoría: $(basename "$1")"' _ {} \;
+```
+
+La ruta de `wallpaper_dir` debe existir y cada categoría listada debe ser una
+subcarpeta con al menos una imagen.
 
 Avatar:
 

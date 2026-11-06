@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# Uso: wallpaper-pick [--desktop] [--custom] [--prompt TEXTO]
+# Elige un fondo y devuelve por stdout una ruta absoluta o "desktop".
+set -uo pipefail
+
+ROFI_CONFIG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
+APPEARANCE="$HOME/.local/bin/appearance"
+BG_DIR="$HOME/.config/theme/backgrounds"
+
+DESKTOP=0
+CUSTOM=0
+PROMPT="Fondo"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --desktop) DESKTOP=1 ;;
+    --custom)  CUSTOM=1 ;;
+    --prompt)  PROMPT="${2:-Fondo}"; shift ;;
+    *) echo "Uso: wallpaper-pick [--desktop] [--custom] [--prompt TEXTO]" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+ROOT="$("$APPEARANCE" get wallpaper_dir "$HOME/Pictures/wallpapers")"
+ROOT="${ROOT%/}"
+
+error() {
+  rofi -e "$1" 2>/dev/null || echo "$1" >&2
+  exit 1
+}
+
+[ -d "$ROOT" ] || error "No existe la carpeta de wallpapers:
+$ROOT"
+
+rofi_menu() {
+  rofi -dmenu -i -no-custom -format i -config "$ROFI_CONFIG" "$@"
+}
+
+has_images() {
+  [ -n "$(find "$1" -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+    -print -quit 2>/dev/null)" ]
+}
+
+# Categorías: subcarpetas directas visibles con al menos una imagen dentro.
+cat_names=()
+cat_paths=()
+cat_direct=()
+while IFS= read -r -d '' dir; do
+  if has_images "$dir"; then
+    cat_paths+=("$dir")
+    cat_names+=("$(basename "$dir")")
+    cat_direct+=(0)
+  fi
+done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d ! -name '.*' -print0 | sort -z)
+
+# Imágenes sueltas en la raíz: categoría "Sin categoría".
+if [ -n "$(find "$ROOT" -mindepth 1 -maxdepth 1 -type f \
+  \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+  -print -quit 2>/dev/null)" ]; then
+  cat_paths+=("$ROOT")
+  cat_names+=("Sin categoría")
+  cat_direct+=(1)
+fi
+
+if ! has_images "$ROOT" && [ "$DESKTOP" -eq 0 ] && [ "$CUSTOM" -eq 0 ]; then
+  error "No hay imágenes en la carpeta de wallpapers:
+$ROOT"
+fi
+
+items=()
+[ "$DESKTOP" -eq 1 ] && items+=("Igual que el escritorio")
+cat_start=${#items[@]}
+for name in "${cat_names[@]}"; do items+=("$name"); done
+all_idx=${#items[@]}
+items+=("Todas las imágenes")
+custom_idx=-1
+if [ "$CUSTOM" -eq 1 ]; then
+  custom_idx=${#items[@]}
+  items+=("Otra imagen…")
+fi
+
+sel="$(printf '%s\n' "${items[@]}" | rofi_menu -p "$PROMPT")" || exit 1
+[ -n "$sel" ] || exit 1
+[[ "$sel" =~ ^[0-9]+$ ]] || exit 1
+
+if [ "$DESKTOP" -eq 1 ] && [ "$sel" -eq 0 ]; then
+  echo desktop
+  exit 0
+fi
+
+base=""
+direct=0
+if [ "$sel" -ge "$cat_start" ] && [ "$sel" -lt "$all_idx" ]; then
+  c=$((sel - cat_start))
+  base="${cat_paths[$c]}"
+  direct="${cat_direct[$c]}"
+elif [ "$sel" -eq "$all_idx" ]; then
+  base="$ROOT"
+else
+  if [ "$CUSTOM" -eq 1 ] && [ "$sel" -eq "$custom_idx" ]; then
+    f="$(zenity --file-selection --title="Elegir imagen" \
+      --file-filter='Imágenes | *.png *.jpg *.jpeg *.webp')" || exit 1
+    [ -n "$f" ] || exit 1
+    name="$(basename "$f")"
+    dest="$BG_DIR/$name"
+    if [ "$f" = "$dest" ]; then
+      echo "$dest"
+      exit 0
+    fi
+    mkdir -p "$BG_DIR"
+    cp -f "$f" "$dest" || exit 1
+    echo "$dest"
+    exit 0
+  fi
+  exit 1
+fi
+
+files=()
+if [ "$direct" -eq 1 ]; then
+  while IFS= read -r -d '' f; do files+=("$f"); done < <(
+    find "$base" -mindepth 1 -maxdepth 1 -type f \
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+      -print0 | sort -z
+  )
+else
+  while IFS= read -r -d '' f; do files+=("$f"); done < <(
+    find "$base" -type f \
+      \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+      -print0 | sort -z
+  )
+fi
+
+[ "${#files[@]}" -gt 0 ] || error "No hay imágenes en esta categoría."
+
+{
+  for f in "${files[@]}"; do
+    printf '%s\0icon\x1f%s\n' "${f#"$base"/}" "$f"
+  done
+} | rofi_menu -show-icons -p "$PROMPT" \
+  -theme-str 'element-icon { size: 64px; } listview { lines: 8; }' \
+  | {
+      IFS= read -r idx || exit 1
+      [ -n "$idx" ] || exit 1
+      [[ "$idx" =~ ^[0-9]+$ ]] || exit 1
+      [ "$idx" -lt "${#files[@]}" ] || exit 1
+      printf '%s\n' "${files[$idx]}"
+    }

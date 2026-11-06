@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-DIR="$HOME/Pictures/wallpapers"
+DIR="$("$HOME/.local/bin/appearance" get wallpaper_dir "$HOME/Pictures/wallpapers")"
 CACHE="$HOME/.cache/current-wallpaper"
 
 apply() {
@@ -11,13 +11,22 @@ apply() {
 }
 
 if [ "$1" = restore ]; then
-  if [ -f "$CACHE" ]; then apply "$(cat "$CACHE")"; else apply "$DIR/wall.jpg"; fi
+  wp=""
+  [ -f "$CACHE" ] && wp=$(cat "$CACHE")
+  if [ -n "$wp" ] && [ -f "$wp" ]; then
+    apply "$wp"
+    exit 0
+  fi
+  if [ -f "$DIR/wall.jpg" ]; then
+    apply "$DIR/wall.jpg"
+    exit 0
+  fi
+  wp=$(find "$DIR" -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+    -print -quit 2>/dev/null)
+  [ -n "$wp" ] && apply "$wp"
   exit 0
 fi
 
-sel=$(for f in "$DIR"/*.{jpg,jpeg,png,webp}; do
-        [ -f "$f" ] && printf '%s\0icon\x1f%s\n' "$(basename "$f")" "$f"
-      done | rofi -dmenu -show-icons -no-custom -i -p "Fondo" \
-        -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" \
-        -theme-str 'element-icon { size: 64px; } listview { lines: 5; }') || exit 0
-[ -n "$sel" ] && apply "$DIR/$sel"
+sel=$("$HOME/.local/bin/wallpaper-pick") || exit 0
+[ -n "$sel" ] && apply "$sel"

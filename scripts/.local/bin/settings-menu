@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 CFG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
 A="$HOME/.local/bin/appearance"
-WALLDIR="$HOME/Pictures/wallpapers"
-BGDIR="$HOME/.config/theme/backgrounds"
 
 R()     { rofi -dmenu -i -no-custom -format i -config "$CFG" "$@"; }
 term()  { kitty --title "Ajustes" -e bash -c "$1; echo; read -rp 'Pulsa Enter para cerrar '"; }
@@ -13,26 +11,9 @@ sddm_mode() {
   echo "${m:-dark}"
 }
 
-# Elegir fondo: "desktop", una imagen de la carpeta de wallpapers u otra imagen
+# Elegir fondo: "desktop", una imagen del pack u otra imagen
 pick_bg() {
-  local files=() f sel
-  shopt -s nullglob nocaseglob
-  files=("$WALLDIR"/*.{jpg,jpeg,png,webp})
-  shopt -u nullglob nocaseglob
-  sel=$({ printf 'Igual que el escritorio\n'
-          for f in "${files[@]}"; do printf '%s\0icon\x1f%s\n' "$(basename "$f")" "$f"; done
-          printf 'Otra imagen…\n'; } \
-        | R -show-icons -p "$1" -theme-str 'element-icon { size: 48px; } listview { lines: 6; }') || return 1
-  if [ "$sel" -eq 0 ]; then
-    echo desktop
-  elif [ "$sel" -le "${#files[@]}" ]; then
-    echo "${files[$((sel-1))]}"
-  else
-    f=$(zenity --file-selection --title="Elegir imagen" \
-         --file-filter='Imágenes | *.png *.jpg *.jpeg *.webp') || return 1
-    mkdir -p "$BGDIR"; cp -f "$f" "$BGDIR/$(basename "$f")"
-    echo "$BGDIR/$(basename "$f")"
-  fi
+  "$HOME/.local/bin/wallpaper-pick" --desktop --custom --prompt "$1"
 }
 
 while true; do
