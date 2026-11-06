@@ -32,5 +32,6 @@ setsid "$HOME/.local/bin/dock-restart" >/dev/null 2>&1 &
 swaync-client -rs >/dev/null 2>&1
 pkill -USR1 -x kitty 2>/dev/null
 hyprctl reload
+"$HOME/.local/bin/low-end-toggle" apply >/dev/null 2>&1 || true
 setsid sh -c "sleep 0.3; pkill -SIGUSR2 waybar" >/dev/null 2>&1 &
 echo "Tema: $mode"

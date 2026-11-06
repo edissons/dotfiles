@@ -197,6 +197,10 @@ engranaje de Waybar o `SUPER+,`.
   el estado con un icono y un tooltip. Detiene Hypridle, inhibe idle, suspensión
   y cierre por tapa, y guarda el estado en
   `${XDG_RUNTIME_DIR}/gaming-mode.state`.
+- **Modo bajo consumo:** `low-end-toggle` desactiva blur, sombras, animaciones,
+  redondeo y transparencias, y baja el perfil de energía de `performance` a
+  `balanced`. Se activa desde Ajustes o por terminal y se recuerda en
+  `appearance.conf`.
 
 Las capturas de [Vista previa](#vista-previa) muestran el resultado: escritorio,
 barra y panel de ajustes.
@@ -224,6 +228,8 @@ systemd util-linux
 - `flock` (paquete `util-linux`) serializa reinicios y toggles.
 - `socat` es opcional: permite a `workspace-pill` escuchar eventos de Hyprland;
   sin él usa polling de 1 s.
+- `power-profiles-daemon` (`powerprofilesctl`) es opcional: `low-end-toggle` lo
+  usa para bajar el perfil de energía.
 - Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon
   local).
 
@@ -421,6 +427,7 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Desenfoque del inicio de sesión | Activa o desactiva el desenfoque del fondo de SDDM y sincroniza (pide `sudo`). |
 | Barra y dock | Abre el panel GTK3 `waybar-settings`: módulos de la barra, auto-ocultado y ajustes del dock. |
 | Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. Esta entrada vive solo en el menú principal de Ajustes. |
+| Modo bajo consumo | Activa o desactiva `low-end-toggle`: menos efectos y perfil de energía más ligero. |
 
 El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
 
@@ -454,6 +461,7 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 | `dock_enabled` | `on` / `off` | `on` |
 | `dock_autohide` | `on` / `off` | `on` |
 | `bar_autohide` | `on` / `off` | `off` |
+| `low_end` | `on` / `off` | `off` |
 
 Con `desktop`, el bloqueo usa siempre el wallpaper actual
 (`~/.cache/current-wallpaper`). SDDM usa el wallpaper que había al ejecutar
@@ -484,6 +492,27 @@ Desde la terminal:
 ~/.local/bin/appearance get lock_blur off
 ~/.local/bin/appearance-wall lock
 ```
+
+## Modo bajo consumo
+
+`low-end-toggle` es un perfil opcional para equipos con poca GPU. Al activarlo:
+
+- desactiva blur, sombras, animaciones, redondeo y transparencias en Hyprland;
+- si el perfil de energía actual es `performance`, lo baja a `balanced` y guarda
+  el anterior para restaurarlo;
+- recuerda el estado en `appearance.conf` (`low_end=on`) y lo reaplica al
+  iniciar sesión y después de `hyprctl reload` desde `theme-toggle`.
+
+```bash
+~/.local/bin/low-end-toggle on
+~/.local/bin/low-end-toggle off
+~/.local/bin/low-end-toggle toggle
+~/.local/bin/low-end-toggle status
+```
+
+Se usa desde Ajustes o con `hyprctl eval` (Hyprland 0.57 usa Lua; `hyprctl
+keyword` ya no aplica estos cambios). No toca VRR ni desinstala paquetes. El
+perfil de energía solo se modifica si `powerprofilesctl` está disponible.
 
 ## Fuentes
 
@@ -1045,6 +1074,8 @@ Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
   inhibidor de idle/suspensión/tapa.
 - `scripts/.local/bin/gaming-status`: emite el JSON de estado para
   `custom/gaming` de Waybar.
+- `scripts/.local/bin/low-end-toggle`: perfil de bajo consumo para Hyprland y
+  `power-profiles-daemon` (`on|off|toggle|status|apply`).
 - `scripts/.local/bin/bluetooth-toggle`: activa, desactiva o alterna Bluetooth y
   abre el gestor (`on|off|toggle|status|manager`).
 - `scripts/.local/bin/jellyfin-toggle`: inicia, para o alterna Jellyfin y muestra

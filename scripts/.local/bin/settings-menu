@@ -43,8 +43,9 @@ while true; do
           "Desenfoque del bloqueo: $(onoff lock_blur off)"
           "Desenfoque del inicio de sesión: $(onoff sddm_blur on)"
           "Barra y dock"
-          "Aplicaciones del dock" )
-  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 8; }') || exit 0
+          "Aplicaciones del dock"
+          "Modo bajo consumo: $(onoff low_end off)" )
+  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 9; }') || exit 0
   case "$idx" in
     0) "$HOME/.local/bin/wallpaper-select" ;;
     1) term "$HOME/.local/bin/avatar-select" ;;
@@ -55,5 +56,6 @@ while true; do
     5) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
     6) "$HOME/.local/bin/waybar-settings" ;;
     7) "$HOME/.local/bin/dock-settings" ;;
+    8) "$HOME/.local/bin/low-end-toggle" toggle ;;
   esac
 done

@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+set -u
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+APPEARANCE="$HOME/.local/bin/appearance"
+POWER_STATE="$RUNTIME/low-end-power.state"
+LOCK="$RUNTIME/low-end.lock"
+
+usage() {
+    cat <<'EOF'
+Usage: low-end-toggle [on|off|toggle|status|apply]
+
+  on       Disable blur/shadows/animations and use a lighter power profile.
+  off      Restore the previous effects and power profile.
+  toggle   Switch between on and off.
+  status   Show whether the profile is enabled and the current power profile.
+  apply    Reapply the profile if it is enabled (used at login).
+EOF
+}
+
+notify() {
+    if command -v notify-send >/dev/null 2>&1; then
+        notify-send -a "Low-end mode" "$1" >/dev/null 2>&1 || true
+    fi
+}
+
+state() {
+    "$APPEARANCE" get low_end off 2>/dev/null || printf 'off\n'
+}
+
+apply_effects() {
+    hyprctl eval 'hl.config({ decoration = { blur = { enabled = false }, shadow = { enabled = false }, rounding = 0, active_opacity = 1, inactive_opacity = 1 }, animations = { enabled = false } })' >/dev/null 2>&1
+}
+
+restore_effects() {
+    hyprctl eval 'hl.config({ decoration = { blur = { enabled = true }, shadow = { enabled = true }, rounding = 16, active_opacity = 0.92, inactive_opacity = 0.85 }, animations = { enabled = true } })' >/dev/null 2>&1
+}
+
+power_on() {
+    command -v powerprofilesctl >/dev/null 2>&1 || return 0
+    local current
+    current=$(powerprofilesctl get 2>/dev/null) || return 0
+    [ -f "$POWER_STATE" ] || printf '%s\n' "$current" >"$POWER_STATE"
+    if [ "$current" = performance ]; then
+        powerprofilesctl set balanced >/dev/null 2>&1 || true
+    fi
+}
+
+power_restore() {
+    command -v powerprofilesctl >/dev/null 2>&1 || return 0
+    [ -s "$POWER_STATE" ] || return 0
+    local saved
+    saved=$(<"$POWER_STATE")
+    powerprofilesctl set "$saved" >/dev/null 2>&1 || true
+    rm -f "$POWER_STATE"
+}
+
+enable() {
+    if ! apply_effects; then
+        printf 'low-end-toggle: no se pudieron aplicar los efectos de Hyprland\n' >&2
+        return 1
+    fi
+    power_on
+    "$APPEARANCE" set low_end on
+    notify "Modo bajo consumo ON"
+}
+
+disable() {
+    restore_effects || printf 'low-end-toggle: algunos efectos no se restauraron\n' >&2
+    power_restore
+    "$APPEARANCE" set low_end off
+    notify "Modo bajo consumo OFF"
+}
+
+show_status() {
+    local mode power
+    mode=$(state)
+    printf 'Low-end: %s\n' "$mode"
+    if command -v powerprofilesctl >/dev/null 2>&1; then
+        power=$(powerprofilesctl get 2>/dev/null || true)
+        printf 'Power profile: %s\n' "${power:-desconocido}"
+    else
+        printf 'Power profile: powerprofilesctl no disponible\n'
+    fi
+}
+
+mkdir -p "$RUNTIME"
+exec 9>"$LOCK"
+flock 9
+
+case "${1:-status}" in
+    on) enable ;;
+    off) disable ;;
+    toggle)
+        if [ "$(state)" = on ]; then
+            disable
+        else
+            enable
+        fi
+        ;;
+    status) show_status ;;
+    apply)
+        if [ "$(state)" = on ]; then
+            apply_effects || true
+            power_on
+        fi
+        ;;
+    -h|--help|help) usage ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
