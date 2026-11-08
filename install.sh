@@ -11,11 +11,13 @@
 # Dependencies:
 #   bash, coreutils, findutils, jq, python3 (JSONC validation), and the desktop
 #   commands listed in check_dependencies(). Optional: shellcheck, luac, rofi,
-#   fc-match, Hyprland (for hyprctl configerrors).
+#   fc-match, Hyprland (for hyprctl configerrors). Optional Arch package
+#   profiles can be installed with --install-desktop-deps / --install-sddm-deps.
 #
 # Usage:
 #   ./install.sh [--dry-run] [--yes] [--verbose] [--allow-nonstandard]
-#                [--with-session] [--with-fonts] [--with-sddm] [--install-deps]
+#                [--with-session] [--with-fonts] [--with-sddm]
+#                [--install-deps] [--install-desktop-deps] [--install-sddm-deps]
 #   ./install.sh --help
 #
 # The installer is idempotent: re-running it does not duplicate links and does
@@ -41,6 +43,8 @@ WITH_SESSION=0
 WITH_FONTS=0
 WITH_SDDM=0
 INSTALL_DEPS=0
+INSTALL_DESKTOP_DEPS=0
+INSTALL_SDDM_DEPS=0
 
 FAILURES=0
 WARNINGS=0
@@ -119,24 +123,28 @@ This installer links the Glasshouse configuration into $HOME and creates the
 runtime defaults used by the session. It is safe to run more than once.
 
 Flags:
-  --dry-run            Show every action without changing anything.
-  --yes                Do not ask for confirmation (still required for safe use
-                       in scripts).
-  --verbose            Print extra detail, including no-op links.
-  --allow-nonstandard  Allow running when the repo is not at $HOME/dotfiles.
-                       The session scripts hardcode $HOME/dotfiles, so this is
-                       only useful for testing.
-  --with-session       Install the privileged session files with sudo:
-                         /usr/local/bin/hyprland-glass
-                         /usr/share/wayland-sessions/hyprland-glass.desktop
-  --with-fonts         Install SF Pro system-wide with fonts-install, but only
-                       if ~/.local/share/fonts/San-Francisco-Pro-Fonts-master
-                       exists. Then run fonts-apply.
-  --with-sddm          Install/update the Glasshouse SDDM theme with
-                       sddm-install. This edits /etc/sddm.conf and SDDM theme
-                       files. SDDM is never restarted.
-  --install-deps       Install missing required Arch packages with pacman.
-  -h, --help           Show this help.
+  --dry-run              Show every action without changing anything.
+  --yes                  Do not ask for confirmation (still required for safe
+                         use in scripts).
+  --verbose              Print extra detail, including no-op links.
+  --allow-nonstandard    Allow running when the repo is not at $HOME/dotfiles.
+                         The session scripts hardcode $HOME/dotfiles, so this is
+                         only useful for testing.
+  --with-session         Install the privileged session files with sudo:
+                           /usr/local/bin/hyprland-glass
+                           /usr/share/wayland-sessions/hyprland-glass.desktop
+  --with-fonts           Install SF Pro system-wide with fonts-install, but only
+                         if ~/.local/share/fonts/San-Francisco-Pro-Fonts-master
+                         exists. Then run fonts-apply.
+  --with-sddm            Install/update the Glasshouse SDDM theme with
+                         sddm-install. This edits /etc/sddm.conf and SDDM theme
+                         files. SDDM is never restarted.
+  --install-deps         Install missing required Arch packages with pacman.
+  --install-desktop-deps Install the optional Arch desktop dependency profile
+                         with pacman (opt-in; no AUR/paru, no pacman -Sy).
+  --install-sddm-deps    Install the optional Arch SDDM dependency profile with
+                         pacman (opt-in; no AUR/paru, no pacman -Sy).
+  -h, --help             Show this help.
 
 User-level links (default, no sudo):
   theme/.config/theme                       -> ~/.config/theme
@@ -170,14 +178,27 @@ Privileged steps and risks:
   No privileged action runs unless its flag is passed. --with-sddm edits
   /etc/sddm.conf and the installed SDDM theme; a wrong greeter configuration
   can leave the login screen broken. Keep a TTY available before rebooting.
-  SDDM is never restarted by this installer.
+  SDDM is never restarted by this installer. The Glasshouse SDDM theme uses
+  QtQuick 2.15 / QtQuick.Controls 2.15 / QtGraphicalEffects 1.0; Qt5/Qt6
+  greeter packaging can be ambiguous across setups, so use --install-sddm-deps
+  only when it matches your SDDM/greeter stack.
+
+Package installation:
+  --install-deps installs missing required Arch packages. --install-desktop-deps
+  and --install-sddm-deps are separate opt-in profiles (Arch/pacman only). The
+  installer checks package availability with pacman -Si when possible, warns if
+  a package may not be in configured repos (AUR/manual), and only runs sudo
+  pacman -S --needed after confirmation or --yes. --dry-run never installs.
 
 Examples:
   ./install.sh --dry-run --verbose
+  ./install.sh --dry-run --verbose --yes --install-deps --install-desktop-deps --install-sddm-deps
   ./install.sh --yes
-  ./install.sh --yes --with-session
-  ./install.sh --yes --with-fonts --with-sddm
   ./install.sh --yes --install-deps
+  ./install.sh --yes --install-desktop-deps
+  ./install.sh --yes --with-session
+  ./install.sh --yes --install-sddm-deps --with-sddm
+  ./install.sh --yes --with-fonts --with-sddm
 EOF
 }
 
@@ -192,6 +213,8 @@ parse_args() {
       --with-fonts) WITH_FONTS=1 ;;
       --with-sddm) WITH_SDDM=1 ;;
       --install-deps) INSTALL_DEPS=1 ;;
+      --install-desktop-deps) INSTALL_DESKTOP_DEPS=1 ;;
+      --install-sddm-deps) INSTALL_SDDM_DEPS=1 ;;
       -h|--help) usage; exit 0 ;;
       --)
         shift
@@ -575,7 +598,7 @@ check_repo_location() {
   exit 1
 }
 
-# Command -> Arch package mapping for the required commands.
+# Command -> Arch package mapping (best-effort; package names may vary by repo).
 declare -A CMD_PKG=(
   [hyprctl]=hyprland
   [hyprlock]=hyprlock
@@ -590,20 +613,171 @@ declare -A CMD_PKG=(
   [grim]=grim
   [slurp]=slurp
   [wl-copy]=wl-clipboard
+  [wl-paste]=wl-clipboard
   [cliphist]=cliphist
   [fc-match]=fontconfig
   [python3]=python
   [flock]=util-linux
+  [dbus-update-activation-environment]=dbus
+  [swaync-client]=swaync
+  [start-hyprland]=hyprland
+  [notify-send]=libnotify
+  [gsettings]=glib2
+  [socat]=socat
+  [powerprofilesctl]=power-profiles-daemon
+  [nm-applet]=network-manager-applet
+  [blueman-applet]=blueman
+  [blueman-manager]=blueman
+  [pamixer]=pamixer
+  [brightnessctl]=brightnessctl
+  [playerctl]=playerctl
+  [magick]=imagemagick
+  [zenity]=zenity
+  [sddm]=sddm
+  [checkupdates]=pacman-contrib
+  [systemd-inhibit]=systemd
 )
 
 REQUIRED_CMDS=(
   hyprctl hyprlock hypridle waybar swaync nwg-dock-hyprland rofi kitty jq
-  swaybg grim slurp wl-copy cliphist fc-match python3 flock
+  swaybg grim slurp wl-copy wl-paste cliphist fc-match python3 flock
+)
+
+# Checked as warnings with package hints; not treated as core-required failures.
+RELATED_CMDS=(
+  dbus-update-activation-environment swaync-client start-hyprland
+)
+
+# Desktop/profile-related commands checked as optional warnings.
+DESKTOP_CMDS=(
+  notify-send gsettings socat powerprofilesctl nm-applet blueman-applet
+  blueman-manager pamixer brightnessctl playerctl magick zenity
 )
 
 OPTIONAL_CMDS=(
-  sddm magick zenity systemd-inhibit checkupdates paru flatpak
+  sddm systemd-inhibit checkupdates paru flatpak
 )
+
+# Opt-in Arch package profiles (pacman --needed). No AUR/paru.
+DESKTOP_DEPS_PKGS=(
+  hyprpolkitagent
+  xdg-desktop-portal-hyprland
+  xdg-desktop-portal-gtk
+  networkmanager
+  network-manager-applet
+  blueman
+  pamixer
+  brightnessctl
+  playerctl
+  libnotify
+  python-gobject
+  gtk3
+  glib2
+  socat
+  power-profiles-daemon
+  pacman-contrib
+  imagemagick
+  zenity
+)
+
+SDDM_DEPS_PKGS=(
+  sddm
+  qt5-quickcontrols2
+  qt5-graphicaleffects
+  fontconfig
+)
+
+warn_repo_availability() {
+  local profile="$1"
+  shift
+  local pkg
+  if ! command -v pacman >/dev/null 2>&1; then
+    warn "pacman not found; cannot check $profile package availability"
+    return 0
+  fi
+  for pkg in "$@"; do
+    if ! pacman -Si -- "$pkg" >/dev/null 2>&1; then
+      warn "$profile package may not be in configured repos (AUR/manual): $pkg"
+    elif (( VERBOSE )); then
+      vlog "repo package available: $pkg"
+    fi
+  done
+}
+
+install_pkg_profile() {
+  local profile="$1"
+  shift
+  local pkgs=("$@")
+
+  if ((${#pkgs[@]} == 0)); then
+    warn "No packages defined for profile: $profile"
+    return 0
+  fi
+
+  log "Package profile ($profile): ${pkgs[*]}"
+  warn_repo_availability "$profile" "${pkgs[@]}"
+
+  if (( DRY_RUN )); then
+    printf '     [dry-run] sudo pacman -S --needed'
+    printf ' %q' "${pkgs[@]}"
+    printf '\n'
+    return 0
+  fi
+
+  if ! command -v pacman >/dev/null 2>&1; then
+    error "pacman not found; cannot install $profile profile"
+    return 0
+  fi
+
+  if ! confirm "Install $profile packages with pacman -S --needed?"; then
+    warn "Skipped $profile package installation"
+    return 0
+  fi
+
+  local pacman_args=(pacman -S --needed)
+  if (( ASSUME_YES )); then
+    pacman_args+=(--noconfirm)
+  fi
+  pacman_args+=("${pkgs[@]}")
+  if run sudo "${pacman_args[@]}"; then
+    ok "Package profile installed: $profile"
+  else
+    error "Package profile installation failed: $profile"
+  fi
+}
+
+check_command_group() {
+  local level="$1" label="$2"
+  shift 2
+  local cmd pkg msg
+  for cmd in "$@"; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+      vlog "$label found: $cmd"
+      continue
+    fi
+    pkg="${CMD_PKG[$cmd]:-}"
+    msg="$label missing: $cmd"
+    if [[ -n "$pkg" ]]; then
+      msg+=" (package: $pkg)"
+    fi
+    if [[ "$level" == "warn" ]]; then
+      warn "$msg"
+    else
+      vlog "$msg"
+    fi
+  done
+}
+
+check_hyprpolkitagent() {
+  local agent="/usr/lib/hyprpolkitagent/hyprpolkitagent"
+  if [[ -x "$agent" ]]; then
+    vlog "desktop agent found: $agent"
+  elif command -v hyprpolkitagent >/dev/null 2>&1; then
+    vlog "desktop agent found in PATH: hyprpolkitagent"
+  else
+    warn "Desktop agent missing: hyprpolkitagent ($agent; package: hyprpolkitagent)"
+  fi
+}
 
 check_dependencies() {
   log "Checking commands"
@@ -634,6 +808,11 @@ check_dependencies() {
     fi
   done
 
+  # wl-paste is checked with wl-copy (same package) as part of required commands.
+  if command -v wl-copy >/dev/null 2>&1 && ! command -v wl-paste >/dev/null 2>&1; then
+    warn "Missing related command: wl-paste (expected with wl-copy; package: wl-clipboard)"
+  fi
+
   if ((${#missing_pkgs[@]} > 0)); then
     printf 'Suggested package install:\n  sudo pacman -S --needed'
     printf ' %q' "${missing_pkgs[@]}"
@@ -662,6 +841,10 @@ check_dependencies() {
   else
     ok "All required commands are present"
   fi
+
+  check_command_group warn "Related command" "${RELATED_CMDS[@]}"
+  check_command_group warn "Desktop command" "${DESKTOP_CMDS[@]}"
+  check_hyprpolkitagent
 
   for cmd in "${OPTIONAL_CMDS[@]}"; do
     if command -v "$cmd" >/dev/null 2>&1; then
@@ -747,8 +930,25 @@ install_fonts() {
   fi
 }
 
+sddm_qml_modules_dubious() {
+  local root
+  local controls=0 effects=0
+  for root in /usr/lib/qt/qml /usr/lib/qt5/qml /usr/lib/qt6/qml /usr/lib64/qt5/qml; do
+    [[ -d "$root/QtQuick/Controls.2" ]] && controls=1
+    [[ -d "$root/QtGraphicalEffects" ]] && effects=1
+  done
+  (( controls == 0 || effects == 0 ))
+}
+
 install_sddm() {
   log "Installing SDDM theme (sudo); SDDM will not be restarted"
+
+  if ! command -v sddm >/dev/null 2>&1; then
+    warn "sddm command not found. Try --install-sddm-deps (Arch/pacman; Qt5/Qt6 greeter packaging can vary)."
+  elif sddm_qml_modules_dubious; then
+    warn "SDDM/QML modules for the Glasshouse theme look uncertain in common locations (QtQuick 2.15/Controls 2.15/QtGraphicalEffects 1.0). Try --install-sddm-deps if your greeter needs Qt5 modules."
+  fi
+
   if (( DRY_RUN )); then
     log "[dry-run] $HOME/.local/bin/sddm-install <theme-mode>"
     return 0
@@ -1027,6 +1227,13 @@ main() {
   banner
   check_repo_location
   check_dependencies
+
+  if (( INSTALL_DESKTOP_DEPS )); then
+    install_pkg_profile "desktop" "${DESKTOP_DEPS_PKGS[@]}"
+  fi
+  if (( INSTALL_SDDM_DEPS )); then
+    install_pkg_profile "sddm" "${SDDM_DEPS_PKGS[@]}"
+  fi
 
   if (( ! DRY_RUN )); then
     if ! confirm "Proceed with user-level links and runtime defaults?"; then

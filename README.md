@@ -59,16 +59,43 @@ de Waybar con `waybar-build`. No usa `sudo`.
 > `install.sh` exige que el repo esté en `$HOME/dotfiles`. Si está en otra ruta,
 > falla salvo que se pase `--allow-nonstandard`.
 
-### Flags opcionales
+### Ejemplo: PC recién formateada (Arch)
 
-Los pasos con privilegios son opt-in:
+En un Arch limpio, tras clonar el repositorio en `~/dotfiles`:
+
+```bash
+git clone <URL-DEL-REPOSITORIO> ~/dotfiles
+cd ~/dotfiles
+./install.sh --install-deps --install-desktop-deps --yes
+```
+
+Si también vas a usar el greeter con el tema `glass`, añade el perfil SDDM y el
+paso de instalación del tema:
+
+```bash
+./install.sh --install-deps --install-desktop-deps --install-sddm-deps --with-sddm --yes
+```
+
+Notas:
+
+- La instalación de paquetes es **Arch/pacman**. Algunos paquetes pueden no estar
+  en los repositorios configurados y requerir **AUR o repositorios extra** según
+  el sistema; `install.sh` avisa (best-effort con `pacman -Si`) pero **no instala
+  AUR ni usa `paru`**, y **no ejecuta `pacman -Sy` automáticamente**.
+- Las fuentes **SF Pro/SF Mono** no se redistribuyen por licencia; el stack gráfico
+  o el greeter pueden necesitar configuración adicional si faltan dependencias o
+  si tu instalación usa un greeter Qt6 (ver nota de SDDM).
+
+### Flags opcionales
 
 | Flag | Qué hace | Privilegios |
 |---|---|---|
 | `--with-session` | Instala `/usr/local/bin/hyprland-glass` y la entrada de sesión `/usr/share/wayland-sessions/hyprland-glass.desktop`. | `sudo` |
 | `--with-fonts` | Ejecuta `fonts-install` para instalar SF Pro a nivel de sistema y después `fonts-apply`. Solo si existe `~/.local/share/fonts/San-Francisco-Pro-Fonts-master`. | `sudo` |
-| `--with-sddm` | Instala o actualiza el tema SDDM `glass` con `sddm-install`. Modifica `/etc/sddm.conf` y los archivos del tema. | `sudo` |
-| `--install-deps` | Instala con `pacman` los paquetes de Arch que falten para los comandos requeridos. Pide confirmación; con `--yes` añade `--noconfirm`. | `sudo` |
+| `--with-sddm` | Instala o actualiza el tema SDDM `glass` con `sddm-install`. Modifica `/etc/sddm.conf` y los archivos del tema. Si `sddm` falta o los módulos QML parecen inciertos, avisa y sugiere `--install-sddm-deps`; SDDM nunca se reinicia. | `sudo` |
+| `--install-deps` | Instala con `pacman` los paquetes de Arch que falten para los **comandos requeridos**. Pide confirmación; con `--yes` añade `--noconfirm`. | `sudo` |
+| `--install-desktop-deps` | Instala con `pacman -S --needed` el **perfil de dependencias desktop** (opt-in). Respeta `--dry-run`/`--yes` y pide confirmación/sudo. No instala AUR ni usa `paru`. | `sudo` |
+| `--install-sddm-deps` | Instala con `pacman -S --needed` el **perfil de dependencias SDDM** (opt-in). Respeta `--dry-run`/`--yes` y pide confirmación/sudo. No instala AUR ni usa `paru`. | `sudo` |
 | `--allow-nonstandard` | Permite ejecutar el instalador fuera de `~/dotfiles`. Solo para pruebas: los scripts de sesión siguen asumiendo `~/dotfiles`. | — |
 
 Opciones generales: `--dry-run` muestra las acciones sin cambiar nada, `--yes`
@@ -209,29 +236,83 @@ barra y panel de ajustes.
 
 ## Requisitos
 
-Paquetes principales (Arch):
+Todo es **Arch/pacman** en la medida en que los paquetes estén disponibles en los
+repositorios configurados. `install.sh` comprueba comandos requeridos y muestra
+avisos/mapeos de paquetes; antes de instalar perfiles hace una comprobación
+best-effort con `pacman -Si` y avisa si un paquete puede no estar en repos
+configurados (podría requerir **AUR o repos extra** según el sistema). No usa
+`paru`, no instala AUR y **no ejecuta `pacman -Sy` automáticamente**.
+
+### Mínimo requerido (núcleo)
+
+Comandos requeridos que comprueba el instalador (`--install-deps` instala los
+paquetes faltantes mapeados para estos comandos):
 
 ```text
-hyprland hyprlock hypridle waybar swaync nwg-dock-hyprland
-rofi kitty sddm qt5-quickcontrols2 qt5-graphicaleffects
-imagemagick zenity
-jq networkmanager brightnessctl pamixer playerctl grim slurp
-wl-clipboard cliphist swaybg
-hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
-kvantum kvantum-qt5 qt5ct qt6ct
-network-manager-applet blueman pacman-contrib libnotify
-python-gobject gtk3
-systemd util-linux
+hyprctl hyprlock hypridle waybar swaync nwg-dock-hyprland rofi kitty jq
+swaybg grim slurp wl-copy wl-paste cliphist fc-match python3 flock
 ```
 
-- `waybar-settings` requiere los bindings GTK3 de PyGObject (`python-gobject` +
-  `gtk3`).
-- `systemd-inhibit` (paquete `systemd`) es necesario para el modo gaming.
-- `flock` (paquete `util-linux`) serializa reinicios y toggles.
+| Comando | Paquete (mapeo Arch) |
+|---|---|
+| `hyprctl`, `start-hyprland` | `hyprland` |
+| `hyprlock` / `hypridle` | `hyprlock` / `hypridle` |
+| `waybar`, `swaync-client` | `waybar` / `swaync` |
+| `nwg-dock-hyprland`, `rofi`, `kitty` | paquetes homónimos |
+| `jq`, `swaybg`, `grim`, `slurp`, `cliphist` | paquetes homónimos |
+| `wl-copy`, `wl-paste` | `wl-clipboard` |
+| `fc-match` | `fontconfig` |
+| `python3`, `flock` | `python`, `util-linux` |
+
+El chequeo trata `wl-paste` como comando relacionado esperado junto a `wl-copy`
+(mismo paquete) sin romper el núcleo.
+
+### Perfil desktop (`--install-desktop-deps`, opt-in)
+
+Paquetes instalables con `pacman -S --needed`:
+
+```text
+hyprpolkitagent xdg-desktop-portal-hyprland xdg-desktop-portal-gtk
+networkmanager network-manager-applet blueman pamixer brightnessctl
+playerctl libnotify python-gobject gtk3 glib2 socat power-profiles-daemon
+pacman-contrib imagemagick zenity
+```
+
+Además, el instalador comprueba como **avisos/mapeos** (sin romper el core)
+comandos relacionados o de escritorio, por ejemplo:
+`dbus-update-activation-environment`, `swaync-client`, `notify-send`,
+`gsettings`, `socat`, `powerprofilesctl`, `nm-applet`, `blueman-applet`,
+`blueman-manager`, `pamixer`, `brightnessctl`, `playerctl`, `magick`, `zenity`.
+`hyprpolkitagent` se detecta por `/usr/lib/hyprpolkitagent/hyprpolkitagent` o en
+`PATH`.
+
+- `waybar-settings` requiere PyGObject GTK3 (`python-gobject` + `gtk3`).
 - `socat` es opcional: permite a `workspace-pill` escuchar eventos de Hyprland;
   sin él usa polling de 1 s.
 - `power-profiles-daemon` (`powerprofilesctl`) es opcional: `low-end-toggle` lo
   usa para bajar el perfil de energía.
+- `systemd-inhibit` (paquete `systemd`) es necesario para el modo gaming.
+- `checkupdates` (paquete `pacman-contrib`) y `paru` (AUR, si se desea) son
+  opcionales.
+
+### Perfil SDDM (`--install-sddm-deps`, opt-in)
+
+Paquetes instalables con `pacman -S --needed`:
+
+```text
+sddm qt5-quickcontrols2 qt5-graphicaleffects fontconfig
+```
+
+> **Nota (stack Qt5/Qt6):** el tema `glass` usa `QtQuick 2.15`,
+> `QtQuick.Controls 2.15` y `QtGraphicalEffects 1.0` (stack Qt5 según el greeter
+> instalado). Hay **ambigüedad** si tu instalación usa un greeter Qt6 u otro
+> empaquetado de QML. `--with-sddm` avisa si faltan dependencias o si los módulos
+> QML parecen inciertos y sugiere `--install-sddm-deps`; usa ese perfil solo si
+> coincide con tu stack de SDDM/greeter.
+
+### Otros (opcionales, fuera de perfiles)
+
+- `kvantum`, `kvantum-qt5`, `qt5ct`, `qt6ct`: integración Qt/Kvantum.
 - Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon
   local).
 
