@@ -1,7 +1,222 @@
 #!/usr/bin/env bash
-hyprctl binds -j | jq -r '
+set -u
+
+# keybinds-viewer — muestra atajos de Hyprland en rofi, en español.
+# Fuente dinámica: hyprctl binds -j. Enriquecimiento opcional desde configs
+# para resolver comandos de exec (Hyprland 0.57+ expone exec_cmd con arg numérico).
+
+rofi_config="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
+rofi_prompt="Atajos"
+
+show_error() {
+  local msg="$1"
+  if command -v rofi >/dev/null 2>&1; then
+    printf '%s\n' "$msg" | rofi -dmenu -p "$rofi_prompt" -config "$rofi_config" >/dev/null 2>&1 || true
+  fi
+  printf '%s\n' "$msg" >&2
+  exit 1
+}
+
+command -v hyprctl >/dev/null 2>&1 || show_error "No se encontró hyprctl."
+command -v jq >/dev/null 2>&1 || show_error "No se encontró jq."
+
+binds_json=$(hyprctl binds -j 2>/dev/null) || show_error "No se pudieron obtener los atajos (hyprctl binds -j falló)."
+[ -n "$binds_json" ] && [ "$binds_json" != "[]" ] || show_error "No se encontraron atajos de Hyprland."
+
+# --- Enriquecimiento: parsea configs para recuperar dispatcher/args de exec ---
+# Devuelve JSONL: {"modmask":N,"key":"K","mouse":bool,"bindtype":"bind*","dispatcher":"exec","arg":"comando..."}
+parse_config_binds() {
+  local f
+  for f in \
+    "$HOME/dotfiles/hypr/.config/hypr/legacy/hyprland.conf" \
+    "$HOME/dotfiles/hypr/.config/hypr/legacy/daily.conf" \
+    "$HOME/dotfiles/hypr/.config/hypr/daily.conf" \
+    "$HOME/dotfiles/hypr/.config/hypr/hyprland.conf"; do
+    [ -f "$f" ] || continue
+    awk '
+      function trim(s){ sub(/^[ \t]+/,"",s); sub(/[ \t]+$/,"",s); return s }
+      /^[ \t]*#/ { next }
+      /^[ \t]*bind[meldn]*[ \t]*=/ {
+        line=$0
+        sub(/^[ \t]*/,"",line)
+        bt=line; sub(/[ \t]*=.*/,"",bt)
+        sub(/^[^=]*=[ \t]*/,"",line)
+        n=split(line,a,",")
+        if(n<3) next
+        mods=trim(a[1]); key=trim(a[2]); disp=trim(a[3])
+        arg=""
+        for(i=4;i<=n;i++){ arg = (arg=="" ? trim(a[i]) : arg "," trim(a[i])) }
+        gsub(/\$mod/, "SUPER", mods)
+        mask=0
+        if(mods ~ /(^|[ _])SUPER([ _]|$)/) mask += 64
+        if(mods ~ /(^|[ _])CTRL([ _]|$)|CONTROL/) mask += 4
+        if(mods ~ /(^|[ _])ALT([ _]|$)/) mask += 8
+        if(mods ~ /(^|[ _])SHIFT([ _]|$)/) mask += 1
+        mouse = (bt=="bindm" || key ~ /^mouse:/) ? "true" : "false"
+        gsub(/\\/, "\\\\", arg); gsub(/"/, "\\\"", arg)
+        gsub(/\\/, "\\\\", disp); gsub(/"/, "\\\"", disp)
+        gsub(/\\/, "\\\\", key); gsub(/"/, "\\\"", key)
+        printf "{\"modmask\":%d,\"key\":\"%s\",\"mouse\":%s,\"bindtype\":\"%s\",\"dispatcher\":\"%s\",\"arg\":\"%s\"}\n", mask,key,mouse,bt,disp,arg
+      }
+    ' "$f"
+  done
+}
+
+enrich_json=$(parse_config_binds | jq -s '.' 2>/dev/null || printf '[]')
+
+jq_filter='
   def hb($b): ((.modmask / $b | floor) % 2) == 1;
-  def mods: [ (if hb(64) then "SUPER" else empty end), (if hb(4) then "CTRL" else empty end),
-              (if hb(8) then "ALT" else empty end), (if hb(1) then "SHIFT" else empty end) ];
-  .[] | ((mods + [.key]) | join(" + ")) + "   →   " + .dispatcher + " " + .arg' \
-  | rofi -dmenu -i -p "Atajos" -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" >/dev/null
+  def mods:
+    [ (if hb(64) then "⊞" else empty end),
+      (if hb(4)  then "Ctrl" else empty end),
+      (if hb(8)  then "Alt" else empty end),
+      (if hb(1)  then "Shift" else empty end) ];
+
+  def normkey:
+    . as $k |
+    if   $k == "Return" then "Enter"
+    elif $k == "Delete" then "Supr"
+    elif $k == "Print"  then "Impr Pant"
+    elif $k == "comma"  then ","
+    elif $k == "left"   then "←"
+    elif $k == "right"  then "→"
+    elif $k == "up"     then "↑"
+    elif $k == "down"   then "↓"
+    elif $k == "mouse:272" then "Clic izq."
+    elif $k == "mouse:273" then "Clic der."
+    elif $k == "mouse_down" then "Rueda ↓"
+    elif $k == "mouse_up"   then "Rueda ↑"
+    elif $k == "XF86AudioRaiseVolume" then "Subir volumen"
+    elif $k == "XF86AudioLowerVolume" then "Bajar volumen"
+    elif $k == "XF86AudioMute"        then "Silenciar"
+    elif $k == "XF86AudioMicMute"     then "Silenciar micrófono"
+    elif $k == "XF86MonBrightnessUp"  then "Subir brillo"
+    elif $k == "XF86MonBrightnessDown" then "Bajar brillo"
+    elif $k == "XF86AudioPlay"  then "Reproducir/pausar"
+    elif $k == "XF86AudioPause" then "Reproducir/pausar"
+    elif $k == "XF86AudioPlayPause" then "Reproducir/pausar"
+    elif $k == "XF86AudioNext"  then "Siguiente"
+    elif $k == "XF86AudioPrev"  then "Anterior"
+    elif ($k | test("^XF86")) then ($k | sub("^XF86";"") | gsub("(?<a>[a-z])(?<b>[A-Z])"; .a+" "+.b))
+    elif ($k | length) == 1 then ($k | ascii_upcase)
+    else $k
+    end;
+
+  def cleandisp:
+    (.dispatcher // "")
+    | sub("^HL\\.Dispatcher\\("; "") | sub("\\)$"; "")
+    | ascii_downcase;
+
+  def dir_es:
+    if   . == "l" or . == "left"  then "izquierda"
+    elif . == "r" or . == "right" then "derecha"
+    elif . == "u" or . == "up"    then "arriba"
+    elif . == "d" or . == "down"  then "abajo"
+    else . end;
+
+  def shortcmd:
+    . | gsub("\\$HOME"; "~") | gsub("/home/[^/]+"; "~")
+      | if length > 60 then .[0:57] + "..." else . end;
+
+  # Busca enriquecimiento por modmask+key(+mouse) en configs parseadas
+  def enrich($e):
+    . as $b |
+    ($e | map(select(.modmask == $b.modmask and (.key|ascii_downcase) == ($b.key|ascii_downcase) and (.mouse == ($b.mouse|not|not)) )) | .[0]) // null;
+
+  def exec_desc($a):
+    ($a // "") as $cmd |
+    if   ($cmd | test("\\bkitty\\b|\\$terminal\\b")) then "Abrir terminal"
+    elif ($cmd | test("rofi.*(drun|-show drun|drun)")) then "Abrir lanzador de apps"
+    elif ($cmd | test("theme-toggle")) then "Cambiar tema claro/oscuro"
+    elif ($cmd | test("waybar-restart")) then "Reiniciar Waybar"
+    elif ($cmd | test("wallpaper-select")) then "Elegir fondo de pantalla"
+    elif ($cmd | test("keybinds-viewer")) then "Ver atajos de teclado"
+    elif ($cmd | test("power-menu")) then "Abrir menú de energía"
+    elif ($cmd | test("dock-restart")) then "Reiniciar dock"
+    elif ($cmd | test("lock-screen")) then "Bloquear pantalla"
+    elif ($cmd | test("settings-menu")) then "Abrir ajustes"
+    elif ($cmd | test("swaync-client.*-t")) then "Abrir notificaciones"
+    elif ($cmd | test("\\bdolphin\\b")) then "Abrir gestor de archivos"
+    elif ($cmd | test("\\bbrave\\b")) then "Abrir navegador"
+    elif ($cmd | test("cliphist")) then "Abrir portapapeles"
+    elif ($cmd | test("\\bbtop\\b")) then "Abrir monitor del sistema"
+    elif ($cmd | test("pamixer.*--default-source.*-t|pamixer.*-t.*--default-source")) then "Silenciar/activar micrófono"
+    elif ($cmd | test("pamixer.*-i")) then "Subir volumen"
+    elif ($cmd | test("pamixer.*-d")) then "Bajar volumen"
+    elif ($cmd | test("pamixer.*-t")) then "Silenciar/activar volumen"
+    elif ($cmd | test("brightnessctl.*\\+|brightnessctl.*set.*\\+[0-9]")) then "Subir brillo"
+    elif ($cmd | test("brightnessctl.*-|brightnessctl.*set.*[0-9]+%-")) then "Bajar brillo"
+    elif ($cmd | test("playerctl.*play-pause")) then "Reproducir/pausar"
+    elif ($cmd | test("playerctl.*next")) then "Siguiente pista"
+    elif ($cmd | test("playerctl.*previous|playerctl.*prev")) then "Pista anterior"
+    elif ($cmd | test("playerctl")) then "Control multimedia"
+    elif ($cmd | test("grim.*slurp.*wl-copy")) then "Captura de área al portapapeles"
+    elif ($cmd | test("grim.*slurp.*Screenshots")) then "Captura de área a archivo"
+    elif ($cmd | test("grim.*Screenshots")) then "Captura de pantalla a archivo"
+    elif ($cmd | test("grim.*slurp")) then "Captura de área"
+    elif ($cmd | test("^[0-9]+$")) then "Ejecutar comando"
+    elif ($cmd | length) > 0 then "Ejecutar: " + ($cmd | shortcmd)
+    else "Ejecutar comando"
+    end;
+
+  def action_desc($en):
+    cleandisp as $d | (.arg // "") as $a |
+    ($en.dispatcher // "") as $ed | ($en.arg // "") as $ea |
+    if ($d | test("^exec")) then
+      if ($ea | length) > 0 then exec_desc($ea) else exec_desc($a) end
+    elif ($d == "close" or $d == "killactive") then "Cerrar ventana"
+    elif ($d == "fullscreen") then "Pantalla completa"
+    elif ($d == "togglefloating" or $d == "float") then "Ventana flotante/normal"
+    elif ($d == "exit") then "Salir de Hyprland"
+    elif ($d == "movefocus" or $d == "focuswindow" or ($d == "focus" and ($ea == "l" or $ea == "r" or $ea == "u" or $ea == "d" or $a == "l" or $a == "r" or $a == "u" or $a == "d"))) then
+      "Mover foco " + (($ea | if length>0 then . else $a end) | dir_es)
+    elif ($d | test("workspace|focusworkspace")) then
+      (($ea | if length>0 then . else $a end) | ascii_downcase) as $w |
+      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then "Escritorio siguiente"
+      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then "Escritorio anterior"
+      elif ($w | test("^[0-9]+$")) then "Ir al escritorio " + $w
+      else "Ir al escritorio " + $w
+      end
+    elif ($d == "focus") then
+      (($ea | if length>0 then . else $a end) | ascii_downcase) as $w |
+      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then "Escritorio siguiente"
+      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then "Escritorio anterior"
+      elif ($w | test("^[0-9]+$")) then "Ir al escritorio " + $w
+      elif ($w == "l" or $w == "r" or $w == "u" or $w == "d" or $w == "left" or $w == "right" or $w == "up" or $w == "down") then "Mover foco " + ($w | dir_es)
+      else "Acción: focus " + $w
+      end
+    elif ($d | test("movetoworkspace")) then
+      (($ea | if length>0 then . else $a end)) as $w |
+      if ($w | test("^[0-9]+$")) then "Mover ventana al escritorio " + $w else "Mover ventana al escritorio " + $w end
+    elif ($d == "move" and ($en.bindtype // "") == "bindm") then "Arrastrar ventana"
+    elif ($d == "movewindow" or $d == "move" or $d == "movewindowpixel") then
+      (($ea | if length>0 then . else $a end)) as $v |
+      if ($v == "l" or $v == "r" or $v == "u" or $v == "d") then "Mover ventana " + ($v | dir_es)
+      elif ($v | test("^[0-9]")) then "Mover ventana al escritorio " + $v
+      else "Mover ventana"
+      end
+    elif ($d == "resize" and ($en.bindtype // "") == "bindm") then "Redimensionar ventana"
+    elif ($d | test("resizeactive|resizewindow|resize")) then "Redimensionar ventana"
+    elif ($d == "drag") then "Arrastrar ventana"
+    elif ($d == "layout" or $d == "layoutmsg") then
+      (($ea | if length>0 then . else $a end)) as $la |
+      if ($la | test("togglesplit")) then "Alternar división"
+      else "Acción: " + $d + " " + $la
+      end
+    elif ($d == "togglesplit") then "Alternar división"
+    else
+      (($ea | if length>0 then . else $a end)) as $fa |
+      if ($fa | length) > 0 then "Acción: " + $d + " " + ($fa | shortcmd) else "Acción: " + $d end
+    end;
+
+  .[] | . as $b | (enrich($enrich) // {}) as $en |
+    ((mods + [(.key | normkey)]) | join(" + ")) as $shortcut |
+    ($shortcut + "  —  " + action_desc($en))
+'
+
+output=$(printf '%s' "$binds_json" | jq -r --argjson enrich "$enrich_json" "$jq_filter" 2>/dev/null) \
+  || show_error "No se pudieron formatear los atajos."
+
+[ -n "$output" ] || show_error "No se generaron atajos para mostrar."
+
+printf '%s\n' "$output" | rofi -dmenu -i -p "$rofi_prompt" -config "$rofi_config" >/dev/null 2>&1 || true
