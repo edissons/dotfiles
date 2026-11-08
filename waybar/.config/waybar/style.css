@@ -76,11 +76,11 @@ tooltip {
 }
 
 tooltip label { color: @text; }
-#backlight, #cpu, #memory, #temperature, #custom-updates, #custom-gaming {
+#backlight, #cpu, #memory, #temperature, #custom-updates {
     padding: 0 10px;
 }
 
-#custom-keybinds, #custom-wallpaper, #custom-theme, #custom-settings, #custom-power, #custom-notifications {
+#custom-keybinds, #custom-wallpaper, #custom-theme, #custom-settings, #custom-power, #custom-notifications, #custom-gaming {
     padding: 0 10px;
     font-size: 16px;
 }
