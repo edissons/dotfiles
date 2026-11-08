@@ -165,7 +165,9 @@ lo que ya esté correcto.
 
 - `waybar-build` combina `modules.json` y `definitions.json` y genera
   `~/.cache/waybar/config.json`. `waybar-restart` serializa reinicios con
-  `flock` y escribe el log en `~/.cache/waybar/waybar.log`.
+  `flock`, fuerza un locale efectivo para Waybar y escribe el log en
+  `~/.cache/waybar/waybar.log`. El reloj de Waybar usa formatos locale
+  (`{:L...}`) para respetar idioma y región.
 - `~/.config/theme/mode` guarda el modo activo. `theme-toggle` apunta
   `current.conf`, `current.css`, `current.lua`, `current.rasi` y `current.kitty`
   a `theme/<modo>/colors.*`, y propaga el cambio a GTK, iconos, Waybar, SwayNC,
@@ -193,9 +195,9 @@ engranaje de Waybar o `SUPER+,`.
   auto-ocultado de la barra y controles del dock (activo, ocultar
   automáticamente o mostrar siempre). La entrada «Aplicaciones del dock» vive
   solo en el menú principal de Ajustes, no en este panel.
-- **Modo gaming:** el módulo `custom/gaming` de Waybar alterna el modo y muestra
-  el estado con un icono y un tooltip. Detiene Hypridle, inhibe idle, suspensión
-  y cierre por tapa, y guarda el estado en
+- **Modo gaming:** el módulo icon-only `custom/gaming` (16 px) de Waybar alterna
+  el modo y muestra el estado mediante icono y tooltip. Detiene Hypridle, inhibe
+  idle, suspensión y cierre por tapa, y guarda el estado en
   `${XDG_RUNTIME_DIR}/gaming-mode.state`.
 - **Modo bajo consumo:** `low-end-toggle` desactiva blur, sombras, animaciones,
   redondeo y transparencias, y baja el perfil de energía de `performance` a
@@ -261,22 +263,10 @@ redistribución, así que no se incluye en el repo.
 
 ## Servicios opcionales
 
-Glasshouse arranca con una sesión ligera: los servicios que no se usan a diario
-quedan desactivados por defecto. `scripts/system/optional-services` los agrupa,
-muestra su estado y permite aplicarlos o revertirlos. No se desinstala ningún
-paquete y todo cambio es reversible.
-
-Unidades desactivadas por `apply`:
-
-| Unidad | Motivo |
-|---|---|
-| `bluetooth.service` | Bluetooth es manual; ver `bluetooth-toggle`. |
-| `jellyfin.service` | Servidor multimedia bajo demanda; ver `jellyfin-toggle`. |
-| `cups.service`, `cups.socket`, `cups.path` | No se usa impresora. |
-| `avahi-daemon.service`, `avahi-daemon.socket` | No se usa Chromecast/mDNS. |
-| `waydroid-nat.service` | No se usa Waydroid. |
-| `libvirtd.service` y sockets de libvirt (`libvirtd*`, `virtlockd*`, `virtlogd*`) | No se usan máquinas virtuales. |
-| `NetworkManager-wait-online.service` | No hace falta esperar la red al arrancar. |
+`scripts/system/optional-services` es una utilidad para gestionar unidades
+systemd opcionales (por ejemplo, servicios que no necesitas en todos los
+equipos). La lista de unidades se define dentro del script; revísala y ajústala
+antes de usarla.
 
 Comandos:
 
@@ -288,33 +278,22 @@ sudo ./scripts/system/optional-services revert
 ```
 
 `status` y `--dry-run` funcionan como usuario; `apply` y `revert` requieren
-`sudo`. Las unidades que no están instaladas se omiten.
+`sudo`. `apply` deshabilita y detiene las unidades definidas; `revert` las vuelve
+a habilitar e iniciar. Las unidades que no están instaladas se omiten. No se
+desinstala ningún paquete y todo cambio es reversible.
 
-### Bluetooth y Jellyfin manuales
+### Bluetooth
 
 ```bash
 ~/.local/bin/bluetooth-toggle on|off|toggle|status|manager
-~/.local/bin/jellyfin-toggle on|off|toggle|status
 ```
 
-Bluetooth no conecta dispositivos automáticamente. `daily.lua` inicia
+Bluetooth no conecta dispositivos automáticamente. `daily.lua` puede iniciar
 `blueman-applet` en el autostart para mostrar el icono de bandeja, y
 `bluetooth-toggle` controla el servicio, el adaptador (rfkill) y el gestor.
-`manager` abre `blueman-manager` o, si no está, `bluetoothctl`. Jellyfin se
-inicia bajo demanda y `on` imprime `http://localhost:8096`. Arrancar o parar
-estos servicios pide autenticación por Polkit (`pkexec`) si no se ejecuta como
-root; `status` funciona sin privilegios.
-
-`obex.service` es un servicio de usuario y `optional-services` no lo gestiona; se
-detuvo con:
-
-```bash
-systemctl --user stop obex.service
-```
-
-También se añadieron overrides `Hidden=true` en `~/.config/autostart/` para
-arch-update-tray, blueman, baloo_file, geoclue-demo-agent, orca-autostart,
-print-applet, polkit-kde-authentication-agent-1 y xdman.
+`manager` abre `blueman-manager` o, si no está, `bluetoothctl`. Arrancar o parar
+el servicio pide autenticación por Polkit (`pkexec`) si no se ejecuta como root;
+`status` funciona sin privilegios.
 
 ### Reversión
 
@@ -322,15 +301,9 @@ print-applet, polkit-kde-authentication-agent-1 y xdman.
 sudo ./scripts/system/optional-services revert
 ```
 
-Después, si hace falta, borrar los overrides `~/.config/autostart/*.desktop` y
-volver a arrancar el servicio de usuario:
-
-```bash
-systemctl --user start obex.service
-```
-
-No se elimina ningún paquete. VirtualBox no se toca: se instala o desinstala a
-mano y `virtvboxd` ya está desactivado.
+`revert` vuelve a habilitar e iniciar las unidades definidas en el script. No se
+elimina ningún paquete. Si desactivaste otros servicios o añadiste overrides de
+autostart por tu cuenta, revísalos por separado.
 
 ## Estructura del repositorio
 
@@ -527,14 +500,14 @@ encontrada.
 imagen…». El fondo de escritorio sigue disponible con `SUPER+SHIFT+W`.
 
 ```bash
-~/.local/bin/appearance set wallpaper_dir "$HOME/Descargas/Super PACK Wallpaper By Settings PC/Super PACK Wallpaper By Settings PC"
+~/.local/bin/appearance set wallpaper_dir "$HOME/Pictures/wallpapers"
 ~/.local/bin/wallpaper-select
 ~/.local/bin/wallpaper-pick --desktop --custom --prompt "Fondo de bloqueo"
 ```
 
-El pack externo tiene un nivel duplicado. Hay que apuntar `wallpaper_dir` al
-nivel interno, el que contiene `Aesthetic/`, `Mac OS/`, `MINIMALISTA/` y
-`Windows/`; el nivel externo no agrupa esas carpetas como categorías.
+`wallpaper_dir` debe apuntar al directorio cuyas subcarpetas directas quieras
+usar como categorías. Si tu colección tiene un nivel contenedor extra, apunta al
+nivel que contiene esas subcarpetas.
 
 ## Modo bajo consumo
 
@@ -714,7 +687,7 @@ en `~/.config/theme/avatar.png`. Ambos están ignorados por Git:
 
 ```text
 avatar_mode=image
-avatar_image=/home/shadow/.config/theme/avatar.png
+avatar_image=$HOME/.config/theme/avatar.png
 ```
 
 El lockscreen lee ese archivo al bloquear. Para SDDM, `avatar-select` intenta
@@ -857,7 +830,8 @@ systemctl reboot
 Archivo: `waybar/.config/waybar/style.css`.
 
 - Fuente global: `"SF Pro Text", "JetBrainsMono Nerd Font Mono"`.
-- `#clock`: `SF Pro Text`, peso 500.
+- `#clock`: `SF Pro Text`, peso 500. El módulo usa formatos locale (`{:L...}`)
+  para fecha y hora.
 - `#window`: `SF Pro Text`, peso 500.
 - `group/workspaces` agrupa `custom/ws1`…`custom/ws4`: cada workspace muestra
   un único glifo de su ventana activa, o su número si está vacío, con píldora
@@ -888,8 +862,9 @@ La configuración se genera con:
 usan intervalos de 10 s, y `custom/updates` de 6 h; el resto de módulos usan
 eventos o intervalos propios.
 
-`waybar-restart` usa `flock` para serializar reinicios y escribe la salida de
-Waybar en `~/.cache/waybar/waybar.log`. Antes de lanzar `bar-autohide` y
+`waybar-restart` usa `flock` para serializar reinicios, fuerza un locale
+efectivo para Waybar (`LC_TIME`/`LC_ALL`) y escribe la salida en
+`~/.cache/waybar/waybar.log`. Antes de lanzar `bar-autohide` y
 `workspace-pill daemon`, espera a que `hyprctl layers` muestre el namespace
 `waybar`; así el primer `SIGRTMIN+8` de `workspace-pill` no llega antes de que
 Waybar instale su manejador de señales en un arranque en frío. Si Waybar termina
@@ -905,9 +880,9 @@ auto-ocultado de la barra y los ajustes del dock. El panel usa
 `~/.config/theme/current.css`.
 
 En la zona derecha, entre `custom/power` y `custom/notifications`, está
-`custom/gaming`. El módulo ejecuta `gaming-status`, que imprime el JSON de Waybar
-(icono, clase `on`/`off` y tooltip). Al hacer clic llama a `gaming-toggle` y envía
-`SIGRTMIN+9` a Waybar para refrescar el estado.
+`custom/gaming`, un módulo icon-only (16 px). Ejecuta `gaming-status`, que
+imprime el JSON de Waybar (icono, clase `on`/`off` y tooltip). Al hacer clic
+llama a `gaming-toggle` y envía `SIGRTMIN+9` a Waybar para refrescar el estado.
 
 `gaming-toggle` activa o desactiva el modo gaming. Al activarlo detiene `hypridle`
 y mantiene un inhibidor
@@ -1059,7 +1034,9 @@ Pendientes conocidos de integración visual, no tocados en esta fase:
 
 ## Atajos de teclado
 
-Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
+Atajos principales de la sesión (`hyprland.lua` y `daily.lua`). El visor
+`keybinds-viewer` (`SUPER+F1`) muestra estos atajos en Rofi con descripciones en
+español y usa `⊞` para la tecla Super:
 
 | Atajo | Acción |
 |---|---|
@@ -1106,7 +1083,7 @@ Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
 - `scripts/.local/bin/sddm-install`: instala el tema, fondo, avatar y desenfoque
   de glass.
 - `scripts/.local/bin/waybar-build` / `waybar-restart`: genera la configuración y
-  reinicia Waybar (log en `~/.cache/waybar/waybar.log`).
+  reinicia Waybar con locale efectivo (log en `~/.cache/waybar/waybar.log`).
 - `scripts/.local/bin/waybar-settings`: panel GTK3 «Barra y dock».
 - `scripts/.local/bin/bar-autohide`: auto-ocultado de Waybar por posición del cursor.
 - `scripts/.local/bin/dock-restart`: nwg-dock; respeta `dock_enabled` y
@@ -1121,16 +1098,17 @@ Atajos principales de la sesión (`hyprland.lua` y `daily.lua`):
   `power-profiles-daemon` (`on|off|toggle|status|apply`).
 - `scripts/.local/bin/bluetooth-toggle`: activa, desactiva o alterna Bluetooth y
   abre el gestor (`on|off|toggle|status|manager`).
-- `scripts/.local/bin/jellyfin-toggle`: inicia, para o alterna Jellyfin y muestra
-  `http://localhost:8096` (`on|off|toggle|status`).
+
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
 - `scripts/.local/bin/wallpaper-pick`: selector Rofi en dos pasos (categoría →
   imagen) sobre `wallpaper_dir`; admite `--desktop`, `--custom` y `--prompt`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
-- `scripts/.local/bin/power-menu`, `keybinds-viewer`, `updates-count`,
-  `hypr-test`, `hyprland-glass`.
+- `scripts/.local/bin/power-menu`, `updates-count`, `hypr-test`,
+  `hyprland-glass`.
+- `scripts/.local/bin/keybinds-viewer`: visor Rofi de atajos de Hyprland con
+  descripciones en español y `⊞` para Super.
 - `scripts/system/optional-services`: desactiva o reactiva los servicios
   opcionales (`status|apply|revert`, `--dry-run`).
 - `hypr-lua-migrate.sh` (raíz del repo): migra Hyprland a Lua, valida, archiva

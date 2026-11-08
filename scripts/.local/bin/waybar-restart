@@ -15,7 +15,8 @@ pkill -f '[w]orkspace-pill daemon'
 pkill -x waybar
 sleep 0.3
 : >"$LOG"
-env LC_TIME="${LC_TIME:-${LC_ALL:-${LANG:-C.UTF-8}}}" setsid nohup waybar -c "$HOME/.cache/waybar/config.json" -s "$W/style.css" >"$LOG" 2>&1 9>&- &
+effective_locale="${LC_TIME:-${LC_ALL:-${LANG:-C.UTF-8}}}"
+env LC_ALL="${LC_ALL:-$effective_locale}" LC_TIME="$effective_locale" setsid nohup waybar -c "$HOME/.cache/waybar/config.json" -s "$W/style.css" >"$LOG" 2>&1 9>&- &
 
 mapped=0
 for _ in $(seq 50); do
