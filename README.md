@@ -297,8 +297,9 @@ sudo ./scripts/system/optional-services revert
 ~/.local/bin/jellyfin-toggle on|off|toggle|status
 ```
 
-Bluetooth no arranca applets ni conecta dispositivos automáticamente: `daily.lua`
-ya no lanza `blueman-applet` y se activa solo con `bluetooth-toggle on`.
+Bluetooth no conecta dispositivos automáticamente. `daily.lua` inicia
+`blueman-applet` en el autostart para mostrar el icono de bandeja, y
+`bluetooth-toggle` controla el servicio, el adaptador (rfkill) y el gestor.
 `manager` abre `blueman-manager` o, si no está, `bluetoothctl`. Jellyfin se
 inicia bajo demanda y `on` imprime `http://localhost:8096`. Arrancar o parar
 estos servicios pide autenticación por Polkit (`pkexec`) si no se ejecuta como

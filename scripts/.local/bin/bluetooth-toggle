@@ -47,6 +47,16 @@ block() {
     fi
 }
 
+ensure_applet() {
+    if ! command -v blueman-applet >/dev/null 2>&1; then
+        return 0
+    fi
+    if pgrep -x blueman-applet >/dev/null 2>&1; then
+        return 0
+    fi
+    setsid blueman-applet >/dev/null 2>&1 9>&- &
+}
+
 start_service() {
     if is_active; then
         printf 'Bluetooth ya está activo\n'
@@ -54,6 +64,7 @@ start_service() {
     fi
     unblock
     if run_root systemctl start "$SERVICE"; then
+        ensure_applet
         printf 'Bluetooth ON\n'
         return 0
     fi
@@ -91,6 +102,7 @@ open_manager() {
     if ! is_active && ! start_service; then
         return 1
     fi
+    ensure_applet
     if command -v blueman-manager >/dev/null 2>&1; then
         setsid blueman-manager >/dev/null 2>&1 9>&- &
         printf 'blueman-manager abierto\n'
