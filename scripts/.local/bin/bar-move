@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: bar-move [--file PATH] [--restart] <command> <id> [zone]
+
+Reorder modules in a Waybar modules.json (left/center/right zones).
+Never touches "disabled".
+
+Commands:
+  up ID                   Move ID one position up in its current zone
+  down ID                 Move ID one position down in its current zone
+  top ID                  Move ID to the start of its current zone
+  bottom ID               Move ID to the end of its current zone
+  zone ID left|center|right
+                          Remove ID from any zone and append it to the target zone
+
+Options:
+  --file PATH             Operate on PATH instead of the default modules.json
+  --restart               If a change was made, run ~/.local/bin/waybar-restart
+  -h, --help              Show this help
+
+Default file:
+  <repo>/waybar/.config/waybar/modules.json
+  (repo resolved from this script's location), or ~/dotfiles/...
+EOF
+}
+
+die() {
+  printf 'bar-move: %s\n' "$*" >&2
+  exit 1
+}
+
+require_cmd() {
+  command -v "$1" >/dev/null 2>&1 || die "missing dependency: $1"
+}
+
+require_cmd jq
+require_cmd mktemp
+
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+DEFAULT_FILE="$REPO/waybar/.config/waybar/modules.json"
+if [[ ! -f "$DEFAULT_FILE" ]]; then
+  DEFAULT_FILE="$HOME/dotfiles/waybar/.config/waybar/modules.json"
+fi
+
+FILE="$DEFAULT_FILE"
+RESTART=0
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --file)
+      [[ $# -ge 2 ]] || die "--file requires a path"
+      FILE="$2"
+      shift 2
+      ;;
+    --restart)
+      RESTART=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      break
+      ;;
+    -*)
+      die "unknown option: $1"
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
+[[ $# -ge 1 ]] || { usage >&2; die "missing command"; }
+cmd="$1"
+shift
+
+case "$cmd" in
+  up|down|top|bottom)
+    [[ $# -eq 1 ]] || die "$cmd requires exactly one argument: ID"
+    id="$1"
+    target_zone=""
+    ;;
+  zone)
+    [[ $# -eq 2 ]] || die "zone requires two arguments: ID ZONE"
+    id="$1"
+    target_zone="$2"
+    case "$target_zone" in
+      left|center|right) ;;
+      *) die "zone must be left, center, or right (got: $target_zone)" ;;
+    esac
+    ;;
+  *)
+    die "unknown command: $cmd"
+    ;;
+esac
+
+[[ -f "$FILE" ]] || die "file not found: $FILE"
+jq -e 'type == "object"' "$FILE" >/dev/null 2>&1 || die "invalid JSON: $FILE"
+
+tmp=""
+cleanup() {
+  if [[ -n "$tmp" && -f "$tmp" ]]; then
+    rm -f "$tmp"
+  fi
+}
+trap cleanup EXIT
+
+find_zone() {
+  local found
+  found="$(jq -r --arg id "$id" '
+    if ((.left // []) | index($id)) != null then "left"
+    elif ((.center // []) | index($id)) != null then "center"
+    elif ((.right // []) | index($id)) != null then "right"
+    else "" end
+  ' "$FILE")"
+  printf '%s' "$found"
+}
+
+zone="$(find_zone)"
+[[ -n "$zone" ]] || die "ID not found in left/center/right: $id"
+
+idx="$(jq -r --arg z "$zone" --arg id "$id" '.[$z] | index($id)' "$FILE")"
+len="$(jq -r --arg z "$zone" '.[$z] | length' "$FILE")"
+
+changed=0
+msg=""
+
+if [[ "$cmd" == "zone" ]]; then
+  if [[ "$zone" == "$target_zone" ]]; then
+    exit 0
+  fi
+  new_idx="$(jq -r --arg z "$target_zone" '.[$z] // [] | length' "$FILE")"
+  tmp="$(mktemp "${FILE}.XXXXXX")"
+  jq --arg id "$id" --arg to "$target_zone" '
+    .left = ((.left // []) - [$id]) |
+    .center = ((.center // []) - [$id]) |
+    .right = ((.right // []) - [$id]) |
+    .[$to] = ((.[$to] // []) + [$id])
+  ' "$FILE" > "$tmp"
+  changed=1
+  msg="$id: ${zone}[${idx}] -> ${target_zone}[${new_idx}]"
+else
+  case "$cmd" in
+    up)
+      [[ "$idx" -gt 0 ]] || exit 0
+      new_idx=$((idx - 1))
+      tmp="$(mktemp "${FILE}.XXXXXX")"
+      jq --arg z "$zone" --argjson i "$idx" '
+        .[$z] = (.[$z][:($i-1)] + [.[$z][$i], .[$z][$i-1]] + .[$z][($i+1):])
+      ' "$FILE" > "$tmp"
+      ;;
+    down)
+      [[ "$idx" -lt $((len - 1)) ]] || exit 0
+      new_idx=$((idx + 1))
+      tmp="$(mktemp "${FILE}.XXXXXX")"
+      jq --arg z "$zone" --argjson i "$idx" '
+        .[$z] = (.[$z][:$i] + [.[$z][$i+1], .[$z][$i]] + .[$z][($i+2):])
+      ' "$FILE" > "$tmp"
+      ;;
+    top)
+      [[ "$idx" -gt 0 ]] || exit 0
+      new_idx=0
+      tmp="$(mktemp "${FILE}.XXXXXX")"
+      jq --arg z "$zone" --argjson i "$idx" '
+        .[$z] = ([.[$z][$i]] + .[$z][:$i] + .[$z][($i+1):])
+      ' "$FILE" > "$tmp"
+      ;;
+    bottom)
+      [[ "$idx" -lt $((len - 1)) ]] || exit 0
+      new_idx=$((len - 1))
+      tmp="$(mktemp "${FILE}.XXXXXX")"
+      jq --arg z "$zone" --argjson i "$idx" '
+        .[$z] = (.[$z][:$i] + .[$z][($i+1):] + [.[$z][$i]])
+      ' "$FILE" > "$tmp"
+      ;;
+  esac
+  changed=1
+  msg="$id: ${zone}[${idx}] -> ${zone}[${new_idx}]"
+fi
+
+jq -e . "$tmp" >/dev/null
+mv "$tmp" "$FILE"
+tmp=""
+
+printf '%s\n' "$msg"
+
+if [[ "$RESTART" -eq 1 ]]; then
+  "$HOME/.local/bin/waybar-restart" >/dev/null 2>&1 & disown || true
+fi

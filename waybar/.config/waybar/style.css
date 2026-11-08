@@ -25,32 +25,32 @@ font-size: 16px;
 }
 
 #workspaces {
-    padding: 0;
-    margin: 0;
+padding: 0;
+margin: 0;
 }
 
 #custom-ws1, #custom-ws2, #custom-ws3, #custom-ws4 {
-    min-width: 28px;
-    min-height: 24px;
-    padding: 0 6px;
-    margin: 2px 1px;
-    color: @subtext;
-    background: transparent;
-    border-radius: 12px;
-    font-family: "JetBrainsMono Nerd Font Mono";
-    font-size: 16px;
-    transition: all 0.2s ease;
+min-width: 28px;
+min-height: 24px;
+padding: 0 6px;
+margin: 2px 1px;
+color: @subtext;
+background: transparent;
+border-radius: 12px;
+font-family: "JetBrainsMono Nerd Font Mono";
+font-size: 16px;
+transition: all 0.2s ease;
 }
 
 #custom-ws1.empty, #custom-ws2.empty, #custom-ws3.empty, #custom-ws4.empty {
-    font-family: "SF Pro Text";
-    font-size: 13px;
+font-family: "SF Pro Text";
+font-size: 13px;
 }
 
 #custom-ws1.active, #custom-ws2.active, #custom-ws3.active, #custom-ws4.active,
 #custom-ws1:hover, #custom-ws2:hover, #custom-ws3:hover, #custom-ws4:hover {
-    color: @text;
-    background: @surface;
+color: @text;
+background: @surface;
 }
 
 #window { padding: 0 10px; color: @subtext; font-family: "SF Pro Text"; font-weight: 500; }

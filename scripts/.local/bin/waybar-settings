@@ -26,6 +26,29 @@ WAYBAR_RESTART = HOME / ".local/bin/waybar-restart"
 
 ZONES = (("left", "Izquierda"), ("center", "Centro"), ("right", "Derecha"))
 
+NAMES = {
+    "tray": "Wifi",
+    "custom/logo": "Logo",
+    "group/workspaces": "Escritorios",
+    "hyprland/window": "Ventana",
+    "custom/updates": "Actualizaciones",
+    "cpu": "CPU",
+    "memory": "Memoria",
+    "temperature": "Temperatura",
+    "backlight": "Brillo",
+    "bluetooth": "Bluetooth",
+    "network": "Red",
+    "pulseaudio": "Volumen",
+    "battery": "Batería",
+    "clock": "Reloj",
+    "custom/keybinds": "Atajos",
+    "custom/theme": "Tema",
+    "custom/settings": "Ajustes",
+    "custom/power": "Energía",
+    "custom/gaming": "Gaming",
+    "custom/notifications": "Notificaciones",
+}
+
 
 def appearance_get(key, default):
     try:
@@ -81,8 +104,8 @@ class SettingsPanel(Gtk.Window):
         self.restart_source = None
         self.loading = True
 
-        self.build_header()
-        self.build_body()
+        self.build_chrome()
+        self.populate_body()
 
         self.connect("destroy", self.on_destroy)
         self.loading = False
@@ -95,7 +118,7 @@ class SettingsPanel(Gtk.Window):
         data.setdefault("disabled", [])
         return data
 
-    def build_header(self):
+    def build_chrome(self):
         header = Gtk.HeaderBar()
         header.set_show_close_button(True)
         header.get_style_context().add_class("settings-header")
@@ -104,17 +127,21 @@ class SettingsPanel(Gtk.Window):
         header.set_custom_title(title)
         self.set_titlebar(header)
 
-    def build_body(self):
-        scroller = Gtk.ScrolledWindow()
-        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scroller.set_shadow_type(Gtk.ShadowType.NONE)
+        self.scroller = Gtk.ScrolledWindow()
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.set_shadow_type(Gtk.ShadowType.NONE)
 
-        surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        surface.get_style_context().add_class("settings-surface")
-        surface.set_border_width(16)
-        scroller.add(surface)
+        self.surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.surface.get_style_context().add_class("settings-surface")
+        self.surface.set_border_width(16)
+        self.scroller.add(self.surface)
+        self.add(self.scroller)
 
-        surface.pack_start(self.section_title("BARRA"), False, False, 0)
+    def populate_body(self):
+        for child in self.surface.get_children():
+            self.surface.remove(child)
+
+        self.surface.pack_start(self.section_title("BARRA"), False, False, 0)
 
         seen = set()
         for zone, _label in ZONES:
@@ -122,14 +149,14 @@ class SettingsPanel(Gtk.Window):
                 if name in seen:
                     continue
                 seen.add(name)
-                surface.pack_start(self.module_row(name, zone), False, False, 0)
+                self.surface.pack_start(self.module_row(name, zone), False, False, 0)
 
-        surface.pack_start(self.bar_autohide_row(), False, False, 0)
-        surface.pack_start(self.section_title("DOCK"), False, False, 0)
-        surface.pack_start(self.dock_enabled_row(), False, False, 0)
-        surface.pack_start(self.dock_mode_rows(), False, False, 0)
+        self.surface.pack_start(self.bar_autohide_row(), False, False, 0)
+        self.surface.pack_start(self.section_title("DOCK"), False, False, 0)
+        self.surface.pack_start(self.dock_enabled_row(), False, False, 0)
+        self.surface.pack_start(self.dock_mode_rows(), False, False, 0)
 
-        self.add(scroller)
+        self.surface.show_all()
 
     def section_title(self, text):
         label = Gtk.Label(label=text, xalign=0)
@@ -140,10 +167,27 @@ class SettingsPanel(Gtk.Window):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.get_style_context().add_class("setting-row")
 
-        label = Gtk.Label(label=name, xalign=0)
+        label = Gtk.Label(label=NAMES.get(name, name), xalign=0)
         label.set_hexpand(True)
         label.set_ellipsize(3)
         row.pack_start(label, True, True, 0)
+
+        move_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        up = Gtk.Button(label="▲")
+        down = Gtk.Button(label="▼")
+        items = self.modules.get(zone, [])
+        try:
+            idx = items.index(name)
+        except ValueError:
+            idx = -1
+        for button, direction in ((up, -1), (down, 1)):
+            button.set_relief(Gtk.ReliefStyle.NONE)
+            button.set_can_focus(False)
+            button.connect("clicked", self.on_module_moved, name, direction)
+            move_box.pack_start(button, False, False, 0)
+        up.set_sensitive(idx > 0)
+        down.set_sensitive(0 <= idx < len(items) - 1)
+        row.pack_start(move_box, False, False, 0)
 
         combo = Gtk.ComboBoxText()
         for zone_id, zone_label in ZONES:
@@ -245,6 +289,31 @@ class SettingsPanel(Gtk.Window):
             stderr=subprocess.DEVNULL,
         )
         return False
+
+    def _find_zone(self, name):
+        for zone, _label in ZONES:
+            if name in self.modules.get(zone, []):
+                return zone
+        return None
+
+    def on_module_moved(self, _button, name, direction):
+        if self.loading:
+            return
+        zone = self._find_zone(name)
+        if zone is None:
+            return
+        items = self.modules.get(zone, [])
+        try:
+            idx = items.index(name)
+        except ValueError:
+            return
+        new_idx = idx + direction
+        if new_idx < 0 or new_idx >= len(items):
+            return
+        items[idx], items[new_idx] = items[new_idx], items[idx]
+        self.save_modules()
+        self.populate_body()
+        self.schedule_waybar_restart()
 
     def on_zone_changed(self, combo, name):
         if self.loading:

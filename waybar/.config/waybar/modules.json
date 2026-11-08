@@ -6,14 +6,12 @@
   ],
   "center": [],
   "right": [
-    "tray",
     "custom/updates",
+    "tray",
     "cpu",
     "memory",
     "temperature",
     "backlight",
-    "bluetooth",
-    "network",
     "pulseaudio",
     "battery",
     "clock",
@@ -25,8 +23,6 @@
     "custom/notifications"
   ],
   "disabled": [
-    "temperature",
-    "bluetooth",
-    "network"
+    "temperature"
   ]
 }

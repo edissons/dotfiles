@@ -98,111 +98,111 @@ switch:checked {
 }
 
 switch:disabled,
-switch:disabled:checked {
-    background-color: alpha(@subtext, 0.22);
-    background-image: none;
-}
+    switch:disabled:checked {
+        background-color: alpha(@subtext, 0.22);
+        background-image: none;
+    }
 
-switch slider {
-    min-width: 20px;
-    min-height: 20px;
-    margin: 2px;
-    border: none;
-    border-radius: 999px;
-    background-color: #ffffff;
-    background-image: none;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-    transition: background-color 180ms ease, box-shadow 180ms ease;
-}
+    switch slider {
+        min-width: 20px;
+        min-height: 20px;
+        margin: 2px;
+        border: none;
+        border-radius: 999px;
+        background-color: #ffffff;
+        background-image: none;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+        transition: background-color 180ms ease, box-shadow 180ms ease;
+    }
 
-switch:checked slider {
-    background-color: #ffffff;
-    background-image: none;
-}
+    switch:checked slider {
+        background-color: #ffffff;
+        background-image: none;
+    }
 
-switch:disabled slider {
-    background-color: @subtext;
-    background-image: none;
-    box-shadow: none;
-}
+    switch:disabled slider {
+        background-color: @subtext;
+        background-image: none;
+        box-shadow: none;
+    }
 
-/* Zone selector */
-combobox button {
-    min-width: 0;
-    min-height: 0;
-    padding: 4px 10px;
-    background-color: @surface;
-    background-image: none;
-    border: 1px solid @border;
-    border-radius: 8px;
-    color: @text;
-    font-size: 12px;
-    box-shadow: none;
-    transition: background-color 140ms ease, border-color 140ms ease;
-}
+    /* Zone selector */
+    combobox button {
+        min-width: 0;
+        min-height: 0;
+        padding: 4px 10px;
+        background-color: @surface;
+        background-image: none;
+        border: 1px solid @border;
+        border-radius: 8px;
+        color: @text;
+        font-size: 12px;
+        box-shadow: none;
+        transition: background-color 140ms ease, border-color 140ms ease;
+    }
 
-combobox button cellview {
-    color: @text;
-}
+    combobox button cellview {
+        color: @text;
+    }
 
-combobox button:hover {
-    background-color: @border;
-}
+    combobox button:hover {
+        background-color: @border;
+    }
 
-combobox button:active {
-    background-color: @border;
-}
+    combobox button:active {
+        background-color: @border;
+    }
 
-combobox button:disabled {
-    background-color: alpha(@text, 0.04);
-    color: @subtext;
-}
+    combobox button:disabled {
+        background-color: alpha(@text, 0.04);
+        color: @subtext;
+    }
 
-combobox button:disabled cellview {
-    color: @subtext;
-}
+    combobox button:disabled cellview {
+        color: @subtext;
+    }
 
-combobox arrow {
-    color: @subtext;
-    min-width: 12px;
-    min-height: 12px;
-}
+    combobox arrow {
+        color: @subtext;
+        min-width: 12px;
+        min-height: 12px;
+    }
 
-menu {
-    background-color: @bg;
-    background-image: none;
-    border: 1px solid @border;
-    border-radius: 12px;
-    padding: 4px;
-    color: @text;
-}
+    menu {
+        background-color: @bg;
+        background-image: none;
+        border: 1px solid @border;
+        border-radius: 12px;
+        padding: 4px;
+        color: @text;
+    }
 
-menu menuitem {
-    padding: 6px 10px;
-    border-radius: 8px;
-    background-image: none;
-}
+    menu menuitem {
+        padding: 6px 10px;
+        border-radius: 8px;
+        background-image: none;
+    }
 
-menu menuitem:hover {
-    background-color: @surface;
-}
+    menu menuitem:hover {
+        background-color: @surface;
+    }
 
-menu menuitem:disabled {
-    color: @subtext;
-}
+    menu menuitem:disabled {
+        color: @subtext;
+    }
 
-/* Dock mode radio options */
-radiobutton {
-    color: @text;
-    padding: 2px 0;
-}
+    /* Dock mode radio options */
+    radiobutton {
+        color: @text;
+        padding: 2px 0;
+    }
 
-radiobutton:disabled {
-    color: @subtext;
-}
+    radiobutton:disabled {
+        color: @subtext;
+    }
 
-/* Keyboard focus */
-combobox button:focus,
+    /* Keyboard focus */
+    combobox button:focus,
 radiobutton:focus,
 switch:focus {
     outline-style: solid;
