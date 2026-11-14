@@ -230,13 +230,10 @@ while true; do
     if [ "$initialized" != "1" ]; then
         prev_plugged=$plugged
         initialized=1
-        # Sin notificaciones en el primer ciclo; inicializa rearme según nivel actual.
-        if [ "$capacity" -le "$VERY_CRITICAL_THRESHOLD" ]; then warned_very_critical=1; else warned_very_critical=0; fi
-        if [ "$capacity" -le "$CRITICAL_THRESHOLD" ]; then warned_critical=1; else warned_critical=0; fi
-        if [ "$capacity" -le "$LOW_THRESHOLD" ]; then warned_low=1; else warned_low=0; fi
-        save_state
-        sleep "$INTERVAL"
-        continue
+        # No suprimir alertas del estado actual en el primer ciclo.
+        warned_low=0
+        warned_critical=0
+        warned_very_critical=0
     fi
 
     # Transiciones de cargador (debounce por estado previo)
