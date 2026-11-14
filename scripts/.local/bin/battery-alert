@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
+LOCK="$RUNTIME/battery-alert.lock"
+STATE="$RUNTIME/battery-alert.state"
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}/battery-alert/config"
+INTERVAL=15
+
+# Defaults
+SOUND_LOW="${SOUND_LOW:-/usr/share/sounds/freedesktop/stereo/dialog-warning.oga}"
+SOUND_CRITICAL="${SOUND_CRITICAL:-/usr/share/sounds/freedesktop/stereo/suspend-error.oga}"
+SOUND_PLUG="${SOUND_PLUG:-/usr/share/sounds/freedesktop/stereo/power-plug.oga}"
+SOUND_UNPLUG="${SOUND_UNPLUG:-/usr/share/sounds/freedesktop/stereo/power-unplug.oga}"
+LOW_THRESHOLD="${LOW_THRESHOLD:-20}"
+CRITICAL_THRESHOLD="${CRITICAL_THRESHOLD:-10}"
+VERY_CRITICAL_THRESHOLD="${VERY_CRITICAL_THRESHOLD:-5}"
+LOW_REARM="${LOW_REARM:-25}"
+CRITICAL_REARM="${CRITICAL_REARM:-15}"
+VERY_CRITICAL_REARM="${VERY_CRITICAL_REARM:-10}"
+
+load_config() {
+    [ -f "$CFG" ] && [ -r "$CFG" ] || return 0
+    # Carga simple y acotada: solo asignaciones KEY=VALUE de variables permitidas.
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            ''|\#*) continue ;;
+        esac
+        case "$line" in
+            SOUND_LOW=*|SOUND_CRITICAL=*|SOUND_PLUG=*|SOUND_UNPLUG=*|\
+            LOW_THRESHOLD=*|CRITICAL_THRESHOLD=*|VERY_CRITICAL_THRESHOLD=*|\
+            LOW_REARM=*|CRITICAL_REARM=*|VERY_CRITICAL_REARM=*)
+                key=${line%%=*}
+                val=${line#*=}
+                # quita comillas simples/dobles envolventes
+                val=${val#\"}; val=${val%\"}
+                val=${val#\'}; val=${val%\'}
+                printf -v "$key" '%s' "$val"
+                ;;
+        esac
+    done < "$CFG"
+}
+
+mkdir -p "$RUNTIME"
+exec 9>"$LOCK"
+if ! flock -n 9; then
+    exit 0
+fi
+
+load_config
+
+find_battery() {
+    local d
+    for d in /sys/class/power_supply/BAT*; do
+        [ -d "$d" ] || continue
+        [ -r "$d/capacity" ] && printf '%s\n' "$d" && return 0
+    done
+    return 1
+}
+
+find_ac() {
+    local d type
+    for d in /sys/class/power_supply/AC* /sys/class/power_supply/ADP* /sys/class/power_supply/Mains*; do
+        [ -d "$d" ] || continue
+        type=$(<"$d/type" 2>/dev/null || true)
+        case "$type" in
+            Mains|AC|"")
+                [ -r "$d/online" ] && printf '%s\n' "$d" && return 0
+                ;;
+        esac
+    done
+    # fallback: cualquier fuente con online legible
+    for d in /sys/class/power_supply/*; do
+        [ -d "$d" ] || continue
+        [ -r "$d/online" ] && printf '%s\n' "$d" && return 0
+    done
+    return 1
+}
+
+play_canberra_id() {
+    local id=$1
+    command -v canberra-gtk-play >/dev/null 2>&1 || return 1
+    canberra-gtk-play -i "$id" >/dev/null 2>&1 &
+}
+
+play_sound() {
+    local kind=${1:-}
+    local file id
+    case "$kind" in
+        low|warning)
+            file=$SOUND_LOW; id=dialog-warning ;;
+        critical|suspend-error)
+            file=$SOUND_CRITICAL; id=suspend-error ;;
+        plug|power-plug)
+            file=$SOUND_PLUG; id=power-plug ;;
+        unplug|power-unplug)
+            file=$SOUND_UNPLUG; id=power-unplug ;;
+        none|"")
+            return 0 ;;
+        *)
+            file=$kind; id=dialog-warning ;;
+    esac
+
+    case "$file" in
+        none|None|NONE|"") return 0 ;;
+    esac
+
+    if [ -n "$file" ] && [ -f "$file" ]; then
+        if command -v pw-play >/dev/null 2>&1; then
+            pw-play "$file" >/dev/null 2>&1 &
+            return 0
+        elif command -v paplay >/dev/null 2>&1; then
+            paplay "$file" >/dev/null 2>&1 &
+            return 0
+        elif command -v canberra-gtk-play >/dev/null 2>&1; then
+            canberra-gtk-play -f "$file" >/dev/null 2>&1 &
+            return 0
+        elif command -v aplay >/dev/null 2>&1; then
+            aplay -q "$file" >/dev/null 2>&1 &
+            return 0
+        elif command -v mpv >/dev/null 2>&1; then
+            mpv --no-video --really-quiet "$file" >/dev/null 2>&1 &
+            return 0
+        fi
+    fi
+
+    # Fallback por id de sonido del tema
+    case "$kind" in
+        low|warning) play_canberra_id dialog-warning || true ;;
+        critical|suspend-error) play_canberra_id suspend-error || play_canberra_id dialog-error || true ;;
+        plug|power-plug) play_canberra_id power-plug || play_canberra_id device-added || true ;;
+        unplug|power-unplug) play_canberra_id power-unplug || play_canberra_id device-removed || true ;;
+    esac
+}
+
+notify() {
+    local urgency=$1 title=$2 body=$3
+    command -v notify-send >/dev/null 2>&1 || return 0
+    notify-send -a "Batería" -u "$urgency" "$title" "$body" >/dev/null 2>&1 || true
+}
+
+is_discharging() {
+    local ac_online=$1 status=$2
+    [ "$status" = "Discharging" ] && return 0
+    [ "$ac_online" = "0" ] && [ "$status" != "Charging" ] && [ "$status" != "Full" ] && return 0
+    return 1
+}
+
+is_plugged() {
+    local ac_online=$1 status=$2
+    [ "$ac_online" = "1" ] && return 0
+    [ "$status" = "Charging" ] && return 0
+    [ "$status" = "Full" ] && return 0
+    return 1
+}
+
+save_state() {
+    cat >"$STATE.tmp.$$" <<EOF
+prev_plugged=$prev_plugged
+warned_low=$warned_low
+warned_critical=$warned_critical
+warned_very_critical=$warned_very_critical
+initialized=$initialized
+EOF
+    mv -f "$STATE.tmp.$$" "$STATE"
+}
+
+load_state() {
+    prev_plugged=""
+    warned_low=0
+    warned_critical=0
+    warned_very_critical=0
+    initialized=0
+    [ -r "$STATE" ] || return 0
+    # shellcheck disable=SC1090
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            prev_plugged=*|warned_low=*|warned_critical=*|warned_very_critical=*|initialized=*)
+                key=${line%%=*}; val=${line#*=}
+                printf -v "$key" '%s' "$val"
+                ;;
+        esac
+    done < "$STATE"
+}
+
+BAT_PATH=$(find_battery || true)
+AC_PATH=$(find_ac || true)
+
+if [ -z "$BAT_PATH" ]; then
+    # Sin batería: nada que monitorear.
+    exit 0
+fi
+
+load_state
+
+while true; do
+    # Re-detectar si desaparecen/están temporalmente ilegibles
+    if [ ! -r "$BAT_PATH/capacity" ]; then
+        BAT_PATH=$(find_battery || true)
+    fi
+    if [ -z "${AC_PATH:-}" ] || [ ! -r "$AC_PATH/online" ]; then
+        AC_PATH=$(find_ac || true)
+    fi
+
+    capacity=""
+    status=""
+    ac_online="0"
+    if [ -n "$BAT_PATH" ] && [ -r "$BAT_PATH/capacity" ]; then
+        capacity=$(<"$BAT_PATH/capacity")
+        status=$(<"$BAT_PATH/status" 2>/dev/null || echo Unknown)
+    fi
+    if [ -n "${AC_PATH:-}" ] && [ -r "$AC_PATH/online" ]; then
+        ac_online=$(<"$AC_PATH/online")
+    fi
+
+    if [ -z "$capacity" ] || ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
+        sleep "$INTERVAL"
+        continue
+    fi
+
+    plugged=0
+    if is_plugged "$ac_online" "$status"; then
+        plugged=1
+    fi
+    discharging=0
+    if is_discharging "$ac_online" "$status"; then
+        discharging=1
+    fi
+
+    if [ "$initialized" != "1" ]; then
+        prev_plugged=$plugged
+        initialized=1
+        # Sin notificaciones en el primer ciclo; inicializa rearme según nivel actual.
+        if [ "$capacity" -le "$VERY_CRITICAL_THRESHOLD" ]; then warned_very_critical=1; else warned_very_critical=0; fi
+        if [ "$capacity" -le "$CRITICAL_THRESHOLD" ]; then warned_critical=1; else warned_critical=0; fi
+        if [ "$capacity" -le "$LOW_THRESHOLD" ]; then warned_low=1; else warned_low=0; fi
+        save_state
+        sleep "$INTERVAL"
+        continue
+    fi
+
+    # Transiciones de cargador (debounce por estado previo)
+    if [ "$plugged" != "$prev_plugged" ]; then
+        if [ "$plugged" = "1" ]; then
+            notify normal "Cargador conectado" "El equipo está conectado a la corriente."
+            play_sound plug
+        else
+            notify normal "Cargador desconectado" "El equipo funciona con batería."
+            play_sound unplug
+        fi
+        prev_plugged=$plugged
+    fi
+
+    # Rearmes por histéresis
+    if [ "$capacity" -ge "$LOW_REARM" ]; then warned_low=0; fi
+    if [ "$capacity" -ge "$CRITICAL_REARM" ]; then warned_critical=0; fi
+    if [ "$capacity" -ge "$VERY_CRITICAL_REARM" ]; then warned_very_critical=0; fi
+
+    # Alertas solo en descarga
+    if [ "$discharging" = "1" ]; then
+        if [ "$capacity" -le "$VERY_CRITICAL_THRESHOLD" ] && [ "$warned_very_critical" != "1" ]; then
+            warned_very_critical=1
+            warned_critical=1
+            warned_low=1
+            notify critical "Batería muy crítica (${capacity}%)" "Conecta el cargador inmediatamente."
+            play_sound critical
+        elif [ "$capacity" -le "$CRITICAL_THRESHOLD" ] && [ "$warned_critical" != "1" ]; then
+            warned_critical=1
+            warned_low=1
+            notify critical "Batería crítica (${capacity}%)" "Conecta el cargador lo antes posible."
+            play_sound critical
+        elif [ "$capacity" -le "$LOW_THRESHOLD" ] && [ "$warned_low" != "1" ]; then
+            warned_low=1
+            notify normal "Batería baja (${capacity}%)" "Conecta el cargador."
+            play_sound low
+        fi
+    fi
+
+    save_state
+    sleep "$INTERVAL"
+done

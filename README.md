@@ -611,6 +611,72 @@ Se usa desde Ajustes o con `hyprctl eval` (Hyprland 0.57 usa Lua; `hyprctl
 keyword` ya no aplica estos cambios). No toca VRR ni desinstala paquetes. El
 perfil de energía solo se modifica si `powerprofilesctl` está disponible.
 
+## Alertas de batería
+
+`battery-alert` es un daemon ligero que se inicia con Hyprland
+(`hyprland.start` en `hyprland.lua`). Usa una única instancia con `flock` en
+`$XDG_RUNTIME_DIR`, consulta cada 15 s `/sys/class/power_supply/BAT*` y la
+fuente AC (`AC*|ADP*|Mains*`) y guarda estado en `$XDG_RUNTIME_DIR`.
+
+- **Batería (solo en descarga):** avisos *edge-triggered* con histéresis, sin
+  notificación en el primer ciclo:
+  - 20%: aviso (`notify-send -u normal`, «Batería baja»), rearme al >=25%.
+  - 10%: crítica (`-u critical`, persiste en SwayNC), rearme al >=15%.
+  - 5%: muy crítica (`-u critical`), rearme al >=10%.
+- **Cargador:** notifica y reproduce sonido al conectar o desconectar
+  (transición detectada).
+- **Sonido:** reproduce con `pw-play`, `paplay`, `canberra-gtk-play`, `aplay` o
+  `mpv` en segundo plano; si no hay reproductor o `notify-send`, degrada sin
+  fallo. No instala paquetes nuevos obligatorios.
+
+Configuración opcional en `~/.config/battery-alert/config` (formato
+`KEY=VALUE`, una clave por línea; se ignoran líneas vacías y comentarios `#`):
+
+```bash
+# Rutas de sonido (o "none" para silenciar)
+SOUND_LOW=/usr/share/sounds/freedesktop/stereo/dialog-warning.oga
+SOUND_CRITICAL=/usr/share/sounds/freedesktop/stereo/suspend-error.oga
+SOUND_PLUG=/usr/share/sounds/freedesktop/stereo/power-plug.oga
+SOUND_UNPLUG=/usr/share/sounds/freedesktop/stereo/power-unplug.oga
+
+# Umbrales y rearme por histéresis
+LOW_THRESHOLD=20
+CRITICAL_THRESHOLD=10
+VERY_CRITICAL_THRESHOLD=5
+LOW_REARM=25
+CRITICAL_REARM=15
+VERY_CRITICAL_REARM=10
+```
+
+Si el archivo no existe, usa esos defaults de freedesktop cuando los archivos de
+sonido están presentes.
+
+Probar:
+
+```bash
+# revisar proceso y estado
+pgrep -af battery-alert
+cat "${XDG_RUNTIME_DIR}/battery-alert.state"
+
+# prueba rápida: bajar umbrales temporalmente en ~/.config/battery-alert/config,
+# reiniciar el daemon y esperar un ciclo (<=15 s) con el equipo en descarga
+pkill -f '[b]attery-alert'
+~/.local/bin/battery-alert
+```
+
+Para validar el cargador, conecta o desconecta la corriente y comprueba la
+notificación/sonido. Restablece los umbrales al terminar.
+
+Desactivar:
+
+```bash
+pkill -f '[b]attery-alert'
+```
+
+Y elimina o comenta la línea `hl.exec_cmd(.../battery-alert)` en el bloque
+`hyprland.start` de `hypr/.config/hypr/hyprland.lua` para que no se inicie en
+la siguiente sesión.
+
 ## Fuentes
 
 ### Sesión de usuario
@@ -1179,6 +1245,10 @@ español y usa `⊞` para la tecla Super:
   `power-profiles-daemon` (`on|off|toggle|status|apply`).
 - `scripts/.local/bin/bluetooth-toggle`: activa, desactiva o alterna Bluetooth y
   abre el gestor (`on|off|toggle|status|manager`).
+- `scripts/.local/bin/battery-alert`: daemon de alertas de batería (20/10/5% en
+  descarga, con histéresis) y de conexión/desconexión del cargador; sonidos y
+  umbrales configurables en `~/.config/battery-alert/config`, autostart en
+  Hyprland.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.
