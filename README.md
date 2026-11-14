@@ -78,6 +78,10 @@ paso de instalación del tema:
 
 Notas:
 
+- En una instalación normal con `install.sh` no hace falta habilitar manualmente
+  `battery-alert.service`: el instalador intenta habilitarla e iniciarla
+  (best-effort). Si falla por falta de sesión/bus systemd de usuario, sigue el
+  fallback manual indicado en [Alertas de batería](#alertas-de-batería).
 - La instalación de paquetes es **Arch/pacman**. Algunos paquetes pueden no estar
   en los repositorios configurados y requerir **AUR o repositorios extra** según
   el sistema; `install.sh` avisa (best-effort con `pacman -Si`) pero **no instala
@@ -202,6 +206,9 @@ lo que ya esté correcto.
   Kitty y nwg-dock.
 - `~/.config/theme/appearance.conf` guarda fondos, desenfoque, dock y
   auto-ocultado de la barra. Está ignorado por Git.
+- `install.sh` crea `~/.config/battery-alert/config` por defecto si no existe
+  (intervalo y tonos MP3 del repo) e intenta habilitar/iniciar
+  `battery-alert.service` (best-effort, sin `sudo`).
 - `waybar-settings` es un panel GTK3: edita `modules.json` de forma atómica,
   aplica un reinicio de Waybar debounced de ~250 ms y aplica los cambios del dock
   al instante con `dock-restart`. Carga `settings.css` después de
@@ -624,14 +631,18 @@ perfil de energía solo se modifica si `powerprofilesctl` está disponible.
 `battery-alert` es un daemon ligero que arranca como unidad **systemd de
 usuario** (`battery-alert.service`). `install.sh` enlaza
 `systemd/.config/systemd/user/battery-alert.service` a
-`~/.config/systemd/user/battery-alert.service`; la unidad es `Type=simple`,
-ejecuta `%h/.local/bin/battery-alert`, usa `Restart=always` con `RestartSec=5`,
-`PartOf=graphical-session.target` y `WantedBy=default.target`. Ya no se lanza
-desde `hyprland.lua`, así que no hay doble instancia. El script mantiene una
-única instancia con `flock` en `$XDG_RUNTIME_DIR`, consulta cada 15 s
-`/sys/class/power_supply/BAT*` y la fuente AC (`AC*|ADP*|Mains*`) y guarda
-estado en `$XDG_RUNTIME_DIR`. En cada ciclo también lee el límite de carga real
-de `charge_control_end_threshold` (fallback `CHARGE_LIMIT_FALLBACK`, 100).
+`~/.config/systemd/user/battery-alert.service` y crea
+`~/.config/battery-alert/config` por defecto si no existe (con `INTERVAL=3` y
+rutas a los tonos MP3 del repo: `low_ping.mp3` y `mac_os_breeze.mp3`). La unidad
+es `Type=simple`, ejecuta `%h/.local/bin/battery-alert`, usa `Restart=always` con
+`RestartSec=5`, `PartOf=graphical-session.target` y `WantedBy=default.target`. Ya
+no se lanza desde `hyprland.lua`, así que no hay doble instancia. El script
+mantiene una única instancia con `flock` en `$XDG_RUNTIME_DIR`, consulta
+`/sys/class/power_supply/BAT*` y la fuente AC (`AC*|ADP*|Mains*`) según
+`INTERVAL` (por defecto 3 s en la configuración creada por `install.sh`, o 3 s
+si el valor es inválido) y guarda estado en `$XDG_RUNTIME_DIR`. En cada ciclo
+también lee el límite de carga real de `charge_control_end_threshold` (fallback
+`CHARGE_LIMIT_FALLBACK`, 100). Los tonos MP3 están incluidos en el repo.
 
 - **Batería (solo en descarga):** avisos *edge-triggered* con histéresis. Al
   arrancar se inicializa el estado (`initialized=1`, `prev_plugged` actual y
@@ -678,13 +689,22 @@ CHARGE_LIMIT_FALLBACK=100
 CHARGED_REARM_DELTA=5
 ```
 
-Si el archivo no existe, usa esos defaults de freedesktop cuando los archivos de
-sonido están presentes.
+Si no existe `~/.config/battery-alert/config`, `install.sh` lo crea con los
+defaults anteriores (intervalo y tonos del repo); si aun así el script se ejecuta
+sin archivo, usa los defaults definidos en `battery-alert` (incluidos sonidos
+freedesktop cuando están presentes) y `INTERVAL=3`.
 
 Gestión con systemd:
 
+En una instalación normal, `./install.sh` (en modo no dry-run y sin `sudo`) crea
+el enlace y el archivo de configuración por defecto si faltan, e intenta
+`systemctl --user daemon-reload` y `systemctl --user enable --now
+battery-alert.service` de forma best-effort. Si no hay sesión/bus systemd de
+usuario disponible, avisa y la instalación no falla.
+
 ```bash
-# habilitar e iniciar (./install.sh solo crea el enlace, no habilita la unidad)
+# habilitar e iniciar manualmente (útil si falló por falta de bus de usuario o
+# si deshabilitaste la unidad)
 systemctl --user enable --now battery-alert.service
 
 # estado y reinicio
@@ -695,7 +715,9 @@ systemctl --user restart battery-alert.service
 systemctl --user disable --now battery-alert.service
 ```
 
-Si editas la unidad, aplica antes `systemctl --user daemon-reload`.
+Si editas la unidad, aplica antes `systemctl --user daemon-reload`. Si
+`install.sh` no pudo habilitarla, puede que también necesites ejecutar
+`systemctl --user daemon-reload` antes de `enable --now`.
 
 Probar:
 

@@ -573,9 +573,39 @@ create_runtime_defaults() {
   write_if_missing "$theme_dir/appearance.conf" \
     $'lock_bg=desktop\nlock_blur=off\nsddm_bg=desktop\nsddm_blur=on\ndock_enabled=on\ndock_autohide=on\nbar_autohide=off\n'
   write_if_missing "$theme_dir/avatar.conf" $'avatar_mode=initials\navatar_image=\n'
+  write_if_missing "$HOME/.config/battery-alert/config" \
+    "# Configuración de battery-alert (creada por install.sh si no existía).
+# Usa rutas absolutas expandidas; tras editar: systemctl --user restart battery-alert.service
+INTERVAL=3
+SOUND_LOW=$HOME/dotfiles/low_ping.mp3
+SOUND_CRITICAL=$HOME/dotfiles/low_ping.mp3
+SOUND_PLUG=$HOME/dotfiles/mac_os_breeze.mp3
+SOUND_UNPLUG=$HOME/dotfiles/mac_os_breeze.mp3
+SOUND_CHARGED=$HOME/dotfiles/mac_os_breeze.mp3
+"
   ensure_current_links
   ensure_empty_file "$HOME/.cache/nwg-dock-pinned"
   run_waybar_build
+}
+
+enable_user_services() {
+  if (( DRY_RUN )); then
+    log "[dry-run] systemctl --user daemon-reload && enable --now battery-alert.service"
+    return 0
+  fi
+  if [[ ! -e "$HOME/.config/systemd/user/battery-alert.service" && ! -L "$HOME/.config/systemd/user/battery-alert.service" ]]; then
+    vlog "battery-alert.service not linked; skipping user service enable"
+    return 0
+  fi
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "systemctl not found; cannot enable battery-alert.service"
+    return 0
+  fi
+  if ! systemctl --user daemon-reload && systemctl --user enable --now battery-alert.service; then
+    warn "Could not enable/start battery-alert.service (user systemd unavailable?); run: systemctl --user daemon-reload && systemctl --user enable --now battery-alert.service"
+  else
+    vlog "battery-alert.service enabled/started"
+  fi
 }
 
 check_repo_location() {
@@ -1247,6 +1277,7 @@ main() {
   link_configs
   ensure_pictures
   create_runtime_defaults
+  enable_user_services
 
   if (( WITH_SESSION )); then
     install_session
