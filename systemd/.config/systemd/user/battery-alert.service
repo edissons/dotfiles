@@ -1,0 +1,13 @@
+# Unidad de usuario enlazada por install.sh (link_configs) a ~/.config/systemd/user/.
+[Unit]
+Description=Alertas de batería baja y conexión del cargador
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/battery-alert
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

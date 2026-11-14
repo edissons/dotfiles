@@ -453,6 +453,7 @@ link_configs() {
     safe_link "$f" "$HOME/.local/bin/$name"
   done
   safe_link "$REPO/theme/.local/bin/theme-toggle" "$HOME/.local/bin/theme-toggle"
+  safe_link "$REPO/systemd/.config/systemd/user/battery-alert.service" "$HOME/.config/systemd/user/battery-alert.service"
 }
 
 ensure_pictures() {

@@ -182,6 +182,7 @@ activa: no edites allí esperando cambios en la sesión.
 | `fastfetch/.config/fastfetch/config.jsonc` | `~/.config/fastfetch/config.jsonc` |
 | `scripts/.local/bin/*` | `~/.local/bin/*` |
 | `theme/.local/bin/theme-toggle` | `~/.local/bin/theme-toggle` |
+| `systemd/.config/systemd/user/battery-alert.service` | `~/.config/systemd/user/battery-alert.service` |
 | `wallpapers/Pictures` | `~/Pictures` (si no existe) |
 | `wallpapers/Pictures/wallpapers` | `~/Pictures/wallpapers` (si `~/Pictures` ya existe) |
 
@@ -400,6 +401,7 @@ autostart por tu cuenta, revísalos por separado.
 | `sddm/glass/` | Tema del greeter (QML, `theme.conf` e iconos). |
 | `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar y energía. |
 | `scripts/system/` | Servicios opcionales (`optional-services`). |
+| `systemd/` | Unidades systemd de usuario (`battery-alert.service`). |
 | `wallpapers/` | Fondos de ejemplo. |
 | `fastfetch/` | Configuración de Fastfetch. |
 | `docs/screenshots/` | Capturas usadas en este README. |
@@ -613,18 +615,27 @@ perfil de energía solo se modifica si `powerprofilesctl` está disponible.
 
 ## Alertas de batería
 
-`battery-alert` es un daemon ligero que se inicia con Hyprland
-(`hyprland.start` en `hyprland.lua`). Usa una única instancia con `flock` en
-`$XDG_RUNTIME_DIR`, consulta cada 15 s `/sys/class/power_supply/BAT*` y la
-fuente AC (`AC*|ADP*|Mains*`) y guarda estado en `$XDG_RUNTIME_DIR`.
+`battery-alert` es un daemon ligero que arranca como unidad **systemd de
+usuario** (`battery-alert.service`). `install.sh` enlaza
+`systemd/.config/systemd/user/battery-alert.service` a
+`~/.config/systemd/user/battery-alert.service`; la unidad es `Type=simple`,
+ejecuta `%h/.local/bin/battery-alert`, usa `Restart=always` con `RestartSec=5`,
+`PartOf=graphical-session.target` y `WantedBy=default.target`. Ya no se lanza
+desde `hyprland.lua`, así que no hay doble instancia. El script mantiene una
+única instancia con `flock` en `$XDG_RUNTIME_DIR`, consulta cada 15 s
+`/sys/class/power_supply/BAT*` y la fuente AC (`AC*|ADP*|Mains*`) y guarda
+estado en `$XDG_RUNTIME_DIR`.
 
-- **Batería (solo en descarga):** avisos *edge-triggered* con histéresis, sin
-  notificación en el primer ciclo:
+- **Batería (solo en descarga):** avisos *edge-triggered* con histéresis. Al
+  arrancar se inicializa el estado (`initialized=1`, `prev_plugged` actual y
+  `warned_*` a 0) sin suprimir alertas: si ya está en descarga y por debajo del
+  umbral, notifica en el primer ciclo:
   - 20%: aviso (`notify-send -u normal`, «Batería baja»), rearme al >=25%.
   - 10%: crítica (`-u critical`, persiste en SwayNC), rearme al >=15%.
   - 5%: muy crítica (`-u critical`), rearme al >=10%.
 - **Cargador:** notifica y reproduce sonido al conectar o desconectar
-  (transición detectada).
+  (transición detectada). La primera lectura solo fija `prev_plugged`, así que
+  no hay aviso de cargador en el primer ciclo.
 - **Sonido:** reproduce con `pw-play`, `paplay`, `canberra-gtk-play`, `aplay` o
   `mpv` en segundo plano; si no hay reproductor o `notify-send`, degrada sin
   fallo. No instala paquetes nuevos obligatorios.
@@ -651,31 +662,80 @@ VERY_CRITICAL_REARM=10
 Si el archivo no existe, usa esos defaults de freedesktop cuando los archivos de
 sonido están presentes.
 
+Gestión con systemd:
+
+```bash
+# habilitar e iniciar (./install.sh solo crea el enlace, no habilita la unidad)
+systemctl --user enable --now battery-alert.service
+
+# estado y reinicio
+systemctl --user status battery-alert.service
+systemctl --user restart battery-alert.service
+
+# desactivar
+systemctl --user disable --now battery-alert.service
+```
+
+Si editas la unidad, aplica antes `systemctl --user daemon-reload`.
+
 Probar:
 
 ```bash
-# revisar proceso y estado
-pgrep -af battery-alert
+# revisar unidad y estado
+systemctl --user status battery-alert.service
 cat "${XDG_RUNTIME_DIR}/battery-alert.state"
 
 # prueba rápida: bajar umbrales temporalmente en ~/.config/battery-alert/config,
-# reiniciar el daemon y esperar un ciclo (<=15 s) con el equipo en descarga
-pkill -f '[b]attery-alert'
-~/.local/bin/battery-alert
+# reiniciar la unidad y esperar un ciclo (<=15 s) con el equipo en descarga
+systemctl --user restart battery-alert.service
 ```
+
+Lanzar `~/.local/bin/battery-alert` a mano con la unidad activa no crea una
+segunda instancia: el `flock` hace que el proceso salga con código 0.
 
 Para validar el cargador, conecta o desconecta la corriente y comprueba la
 notificación/sonido. Restablece los umbrales al terminar.
 
+### Log de diagnóstico
+
+Por defecto el daemon no escribe ningún archivo. Con `BATTERY_ALERT_DEBUG=1`
+registra en `$XDG_RUNTIME_DIR/battery-alert.log` el arranque, cada notificación
+con su código de salida y el reproductor de sonido usado con su `rc`. El archivo
+se trunca al superar ~256 KB; sin la variable no se crea.
+
+Para activarlo en la unidad:
+
+```bash
+systemctl --user edit battery-alert.service
+```
+
+Añade:
+
+```ini
+[Service]
+Environment=BATTERY_ALERT_DEBUG=1
+```
+
+Y aplica:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user restart battery-alert.service
+tail -f "$XDG_RUNTIME_DIR/battery-alert.log"
+```
+
+Para desactivarlo, revierte el override (`systemctl --user revert
+battery-alert.service`), ejecuta `daemon-reload` y reinicia. El log existente no
+se borra.
+
 Desactivar:
 
 ```bash
-pkill -f '[b]attery-alert'
+systemctl --user disable --now battery-alert.service
 ```
 
-Y elimina o comenta la línea `hl.exec_cmd(.../battery-alert)` en el bloque
-`hyprland.start` de `hypr/.config/hypr/hyprland.lua` para que no se inicie en
-la siguiente sesión.
+Eso detiene la unidad y evita que arranque en la siguiente sesión. No hace falta
+tocar `hyprland.lua` ni usar `pkill`.
 
 ## Fuentes
 
@@ -1247,8 +1307,8 @@ español y usa `⊞` para la tecla Super:
   abre el gestor (`on|off|toggle|status|manager`).
 - `scripts/.local/bin/battery-alert`: daemon de alertas de batería (20/10/5% en
   descarga, con histéresis) y de conexión/desconexión del cargador; sonidos y
-  umbrales configurables en `~/.config/battery-alert/config`, autostart en
-  Hyprland.
+  umbrales configurables en `~/.config/battery-alert/config`, arranque por la
+  unidad de usuario `battery-alert.service`.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.

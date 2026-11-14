@@ -4,6 +4,7 @@ set -euo pipefail
 RUNTIME="${XDG_RUNTIME_DIR:-/tmp}"
 LOCK="$RUNTIME/battery-alert.lock"
 STATE="$RUNTIME/battery-alert.state"
+LOG="$RUNTIME/battery-alert.log"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/battery-alert/config"
 INTERVAL=15
 
@@ -18,6 +19,15 @@ VERY_CRITICAL_THRESHOLD="${VERY_CRITICAL_THRESHOLD:-5}"
 LOW_REARM="${LOW_REARM:-25}"
 CRITICAL_REARM="${CRITICAL_REARM:-15}"
 VERY_CRITICAL_REARM="${VERY_CRITICAL_REARM:-10}"
+
+# Log de diagnóstico opt-in (BATTERY_ALERT_DEBUG=1). Sin esa variable no escribe nada.
+dbg() {
+    [ "${BATTERY_ALERT_DEBUG:-0}" = "1" ] || return 0
+    if [ -f "$LOG" ] && [ "$(stat -c %s "$LOG" 2>/dev/null || echo 0)" -gt 262144 ]; then
+        : >"$LOG" 2>/dev/null || true
+    fi
+    printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOG" 2>/dev/null || true
+}
 
 load_config() {
     [ -f "$CFG" ] && [ -r "$CFG" ] || return 0
@@ -96,47 +106,65 @@ play_sound() {
         unplug|power-unplug)
             file=$SOUND_UNPLUG; id=power-unplug ;;
         none|"")
+            dbg "sound kind=${kind:-none} player=none rc=0"
             return 0 ;;
         *)
             file=$kind; id=dialog-warning ;;
     esac
 
     case "$file" in
-        none|None|NONE|"") return 0 ;;
+        none|None|NONE|"")
+            dbg "sound kind=$kind player=none rc=0"
+            return 0 ;;
     esac
 
     if [ -n "$file" ] && [ -f "$file" ]; then
         if command -v pw-play >/dev/null 2>&1; then
             pw-play "$file" >/dev/null 2>&1 &
+            dbg "sound kind=$kind player=pw-play rc=0"
             return 0
         elif command -v paplay >/dev/null 2>&1; then
             paplay "$file" >/dev/null 2>&1 &
+            dbg "sound kind=$kind player=paplay rc=0"
             return 0
         elif command -v canberra-gtk-play >/dev/null 2>&1; then
             canberra-gtk-play -f "$file" >/dev/null 2>&1 &
+            dbg "sound kind=$kind player=canberra-gtk-play rc=0"
             return 0
         elif command -v aplay >/dev/null 2>&1; then
             aplay -q "$file" >/dev/null 2>&1 &
+            dbg "sound kind=$kind player=aplay rc=0"
             return 0
         elif command -v mpv >/dev/null 2>&1; then
             mpv --no-video --really-quiet "$file" >/dev/null 2>&1 &
+            dbg "sound kind=$kind player=mpv rc=0"
             return 0
         fi
     fi
 
     # Fallback por id de sonido del tema
+    local rc=0
     case "$kind" in
-        low|warning) play_canberra_id dialog-warning || true ;;
-        critical|suspend-error) play_canberra_id suspend-error || play_canberra_id dialog-error || true ;;
-        plug|power-plug) play_canberra_id power-plug || play_canberra_id device-added || true ;;
-        unplug|power-unplug) play_canberra_id power-unplug || play_canberra_id device-removed || true ;;
+        low|warning) play_canberra_id dialog-warning || rc=$? ;;
+        critical|suspend-error) play_canberra_id suspend-error || play_canberra_id dialog-error || rc=$? ;;
+        plug|power-plug) play_canberra_id power-plug || play_canberra_id device-added || rc=$? ;;
+        unplug|power-unplug) play_canberra_id power-unplug || play_canberra_id device-removed || rc=$? ;;
     esac
+    if [ "$rc" = "0" ]; then
+        dbg "sound kind=$kind player=canberra-gtk-play rc=0"
+    else
+        dbg "sound kind=$kind player=no-player rc=$rc"
+    fi
 }
 
 notify() {
-    local urgency=$1 title=$2 body=$3
-    command -v notify-send >/dev/null 2>&1 || return 0
-    notify-send -a "Batería" -u "$urgency" "$title" "$body" >/dev/null 2>&1 || true
+    local urgency=$1 title=$2 body=$3 rc=0
+    if ! command -v notify-send >/dev/null 2>&1; then
+        dbg "notify type=$urgency title=\"$title\" rc=no-notify-send"
+        return 0
+    fi
+    notify-send -a "Batería" -u "$urgency" "$title" "$body" >/dev/null 2>&1 || rc=$?
+    dbg "notify type=$urgency title=\"$title\" rc=$rc"
 }
 
 is_discharging() {
@@ -190,6 +218,9 @@ if [ -z "$BAT_PATH" ]; then
     # Sin batería: nada que monitorear.
     exit 0
 fi
+
+initial_capacity=$(cat "$BAT_PATH/capacity" 2>/dev/null || echo unknown)
+dbg "start bat=$BAT_PATH ac=${AC_PATH:-none} capacity=$initial_capacity"
 
 load_state
 
