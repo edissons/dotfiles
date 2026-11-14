@@ -1,94 +1,489 @@
-#!/usr/bin/env bash
-CFG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
-A="$HOME/.local/bin/appearance"
+#!/usr/bin/env python3
+import glob
+import os
+import subprocess
+import sys
+from pathlib import Path
 
-R()     { rofi -dmenu -i -no-custom -format i -config "$CFG" "$@"; }
-term()  { kitty --title "Ajustes" -e bash -c "$1; echo; read -rp 'Pulsa Enter para cerrar '"; }
-onoff() { [ "$($A get "$1" "$2")" = on ] && echo "Activado" || echo "Desactivado"; }
-toggle(){ [ "$($A get "$1" "$2")" = on ] && $A set "$1" off || $A set "$1" on; }
-sddm_mode() {
-  local m; m=$(grep -m1 '^mode=' /usr/share/sddm/themes/glass/theme.conf 2>/dev/null | cut -d= -f2)
-  echo "${m:-dark}"
-}
+import gi
 
-# Elegir fondo: "desktop", una imagen del pack u otra imagen
-pick_bg() {
-  "$HOME/.local/bin/wallpaper-pick" --desktop --custom --prompt "$1"
-}
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("Pango", "1.0")
+from gi.repository import Gdk, GLib, Gtk, Pango
 
-pick_wallpaper_dir() {
-  local current chosen
-  current="$($A get wallpaper_dir "$HOME/Pictures/wallpapers")"
-  chosen=$(zenity --file-selection --directory --title="Carpeta de fondos" \
-    --filename="${current%/}/" 2>/dev/null) || return 0
-  [ -n "$chosen" ] || return 0
-  $A set wallpaper_dir "$chosen"
-  "$HOME/.local/bin/wallpaper-select" restore || true
-}
+HOME = Path.home()
+REPO = Path(__file__).resolve().parents[3]
+if not (REPO / "waybar/.config/waybar/settings.css").is_file():
+    REPO = HOME / "dotfiles"
 
-pick_carousel_interval() {
-  local current
-  current="$($A get wallpaper_carousel_interval 10)"
-  local choice
-  choice=$(printf '%s\n' \
-    "5 min" \
-    "10 min (recomendado)" \
-    "15 min" \
-    "30 min" \
-    "60 min" \
-    "Cancelar" | R -p "Intervalo del carrusel" -theme-str 'listview { lines: 6; }') || return 0
-  local val=""
-  case "$choice" in
-    0) val=5 ;;
-    1) val=10 ;;
-    2) val=15 ;;
-    3) val=30 ;;
-    4) val=60 ;;
-    *) return 0 ;;
-  esac
-  $A set wallpaper_carousel_interval "$val"
-  if command -v systemctl >/dev/null 2>&1 && \
-     systemctl --user is-active --quiet wallpaper-carousel.service 2>/dev/null; then
-    systemctl --user restart wallpaper-carousel.service 2>/dev/null || true
-  fi
-}
+SETTINGS_CSS = REPO / "waybar/.config/waybar/settings.css"
+THEME_CSS = HOME / ".config/theme/current.css"
+APPEARANCE = HOME / ".local/bin/appearance"
+SDDM_THEME_CONF = Path("/usr/share/sddm/themes/glass/theme.conf")
 
-while true; do
-  charge_limit=""
-  for bat in /sys/class/power_supply/BAT*; do
-      [ -r "$bat/charge_control_end_threshold" ] || continue
-      charge_limit=$(cat "$bat/charge_control_end_threshold" 2>/dev/null || true)
-      [ -n "$charge_limit" ] && break
-  done
-  charge_limit=${charge_limit:-100}
-  items=( "Fondo de escritorio"
-          "Carpeta de fondos"
-          "Carrusel de fondos: $(onoff wallpaper_carousel off)"
-          "Intervalo del carrusel: $($A get wallpaper_carousel_interval 10) min"
-          "Avatar de perfil"
-          "Fondo de la pantalla de bloqueo"
-          "Fondo del inicio de sesión"
-          "Desenfoque del bloqueo: $(onoff lock_blur off)"
-          "Desenfoque del inicio de sesión: $(onoff sddm_blur on)"
-          "Barra y dock"
-          "Aplicaciones del dock"
-          "Modo bajo consumo: $(onoff low_end off)"
-          "Límite de carga: ${charge_limit}%" )
-  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 13; }') || exit 0
-  case "$idx" in
-    0) "$HOME/.local/bin/wallpaper-select" ;;
-    1) pick_wallpaper_dir ;;
-    2) "$HOME/.local/bin/wallpaper-carousel" toggle ;;
-    3) pick_carousel_interval ;;
-    4) term "$HOME/.local/bin/avatar-select" ;;
-    5) v=$(pick_bg "Fondo de bloqueo") && [ -n "$v" ] && $A set lock_bg "$v" ;;
-    6) v=$(pick_bg "Fondo del login") && [ -n "$v" ] && {
-         $A set sddm_bg "$v"; term "$HOME/.local/bin/sddm-install $(sddm_mode)"; } ;;
-    7) toggle lock_blur off ;;
-    8) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
-    9) "$HOME/.local/bin/waybar-settings" ;;
-    10) "$HOME/.local/bin/dock-settings" ;;
-    11) "$HOME/.local/bin/low-end-toggle" toggle ;;
-    12) "$HOME/.local/bin/battery-settings" ;;
-  esac
-done
+INTERVALS = ["5", "10", "15", "30", "60"]
+
+
+def appearance_get(key, default):
+    try:
+        out = subprocess.check_output(
+            [str(APPEARANCE), "get", key, default],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        return out.strip() or default
+    except (OSError, subprocess.SubprocessError):
+        return default
+
+
+def appearance_set(key, value):
+    try:
+        subprocess.run(
+            [str(APPEARANCE), "set", key, str(value)],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
+def run_bg(cmd):
+    try:
+        subprocess.Popen(
+            cmd,
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
+def run_term(command_str):
+    try:
+        subprocess.Popen(
+            [
+                "kitty",
+                "--title",
+                "Ajustes",
+                "-e",
+                "bash",
+                "-c",
+                command_str + '; echo; read -rp "Pulsa Enter para cerrar "',
+            ],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError:
+        pass
+
+
+def sddm_mode():
+    try:
+        for line in SDDM_THEME_CONF.read_text(encoding="utf-8").splitlines():
+            if line.startswith("mode="):
+                value = line.split("=", 1)[1].strip()
+                return value or "dark"
+    except (OSError, ValueError):
+        pass
+    return "dark"
+
+
+def sddm_install_term(value=None):
+    mode = sddm_mode()
+    target = value if value is not None else mode
+    run_term(f"{HOME / '.local/bin/sddm-install'} {target}")
+
+
+def read_charge_limit():
+    for path in sorted(glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
+        try:
+            raw = Path(path).read_text(encoding="utf-8").strip()
+            if raw:
+                return raw
+        except (OSError, ValueError):
+            continue
+    return "100"
+
+
+def load_css(path, priority):
+    if not path.is_file():
+        print(f"settings-menu: CSS not found: {path}", file=sys.stderr)
+        return None
+    provider = Gtk.CssProvider()
+    provider.connect(
+        "parsing-error",
+        lambda _p, section, error: print(
+            f"settings-menu: CSS error in {path}:{section.get_start_line() + 1}: {error.message}",
+            file=sys.stderr,
+        ),
+    )
+    try:
+        provider.load_from_path(str(path))
+    except GLib.Error as exc:
+        print(f"settings-menu: cannot load {path}: {exc.message}", file=sys.stderr)
+        return None
+    screen = Gdk.Screen.get_default()
+    if screen is not None:
+        Gtk.StyleContext.add_provider_for_screen(screen, provider, priority)
+    return provider
+
+
+class SettingsPanel(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Ajustes")
+        self.set_default_size(520, 720)
+        self.get_style_context().add_class("settings-window")
+
+        self.loading = True
+        self.charge_source = None
+
+        self.build_chrome()
+        self.populate_body()
+
+        self.charge_source = GLib.timeout_add_seconds(2, self.refresh_charge_limit)
+        self.connect("destroy", self.on_destroy)
+        self.loading = False
+
+    def build_chrome(self):
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.get_style_context().add_class("settings-header")
+        title = Gtk.Label(label="Ajustes")
+        title.get_style_context().add_class("settings-title")
+        header.set_custom_title(title)
+        self.set_titlebar(header)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_shadow_type(Gtk.ShadowType.NONE)
+
+        self.surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.surface.get_style_context().add_class("settings-surface")
+        self.surface.set_border_width(16)
+        scroller.add(self.surface)
+        self.add(scroller)
+
+    def populate_body(self):
+        self.surface.pack_start(self.section_title("FONDOS"), False, False, 0)
+        self.surface.pack_start(self.wallpaper_row(), False, False, 0)
+        self.surface.pack_start(self.wallpaper_dir_row(), False, False, 0)
+        self.surface.pack_start(self.carousel_row(), False, False, 0)
+        self.surface.pack_start(self.carousel_interval_row(), False, False, 0)
+
+        self.surface.pack_start(
+            self.section_title("BLOQUEO E INICIO DE SESIÓN"), False, False, 0
+        )
+        self.surface.pack_start(self.lock_bg_row(), False, False, 0)
+        self.surface.pack_start(self.sddm_bg_row(), False, False, 0)
+        self.surface.pack_start(self.lock_blur_row(), False, False, 0)
+        self.surface.pack_start(self.sddm_blur_row(), False, False, 0)
+
+        self.surface.pack_start(self.section_title("INTERFAZ"), False, False, 0)
+        self.surface.pack_start(self.waybar_row(), False, False, 0)
+        self.surface.pack_start(self.dock_apps_row(), False, False, 0)
+
+        self.surface.pack_start(
+            self.section_title("SISTEMA Y PERFIL"), False, False, 0
+        )
+        self.surface.pack_start(self.avatar_row(), False, False, 0)
+        self.surface.pack_start(self.low_end_row(), False, False, 0)
+        self.surface.pack_start(self.charge_limit_row(), False, False, 0)
+
+    def section_title(self, text):
+        label = Gtk.Label(label=text, xalign=0)
+        label.get_style_context().add_class("section-title")
+        return label
+
+    def action_row(self, title, button_label):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label=title, xalign=0)
+        label.set_hexpand(True)
+        label.set_ellipsize(Pango.EllipsizeMode.END)
+        row.pack_start(label, True, True, 0)
+        button = Gtk.Button(label=button_label)
+        button.get_style_context().add_class("action-button")
+        row.pack_start(button, False, False, 0)
+        return row, label, button
+
+    def switch_row(self, title):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label=title, xalign=0)
+        label.set_hexpand(True)
+        label.set_ellipsize(Pango.EllipsizeMode.END)
+        row.pack_start(label, True, True, 0)
+        switch = Gtk.Switch()
+        switch.set_valign(Gtk.Align.CENTER)
+        row.pack_start(switch, False, False, 0)
+        return row, switch
+
+    # --- FONDOS ---
+    def wallpaper_row(self):
+        row, _label, button = self.action_row("Fondo de escritorio", "Elegir")
+        button.connect(
+            "clicked",
+            lambda _b: run_bg([str(HOME / ".local/bin/wallpaper-select")]),
+        )
+        return row
+
+    def wallpaper_dir_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text_box.set_hexpand(True)
+        title = Gtk.Label(label="Carpeta de fondos", xalign=0)
+        title.set_ellipsize(Pango.EllipsizeMode.END)
+        self.wallpaper_dir_label = Gtk.Label(xalign=0)
+        self.wallpaper_dir_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
+        self.wallpaper_dir_label.get_style_context().add_class("section-title")
+        self.wallpaper_dir_label.set_max_width_chars(28)
+        self.update_wallpaper_dir_label()
+        text_box.pack_start(title, False, False, 0)
+        text_box.pack_start(self.wallpaper_dir_label, False, False, 0)
+        row.pack_start(text_box, True, True, 0)
+
+        button = Gtk.Button(label="Cambiar")
+        button.get_style_context().add_class("action-button")
+        button.set_valign(Gtk.Align.CENTER)
+        button.connect("clicked", self.on_change_wallpaper_dir)
+        row.pack_start(button, False, False, 0)
+        return row
+
+    def update_wallpaper_dir_label(self):
+        current = appearance_get("wallpaper_dir", str(HOME / "Pictures/wallpapers"))
+        self.wallpaper_dir_label.set_text(current)
+        self.wallpaper_dir_label.set_tooltip_text(current)
+
+    def on_change_wallpaper_dir(self, _button):
+        if self.loading:
+            return
+        dialog = Gtk.FileChooserDialog(
+            title="Carpeta de fondos",
+            parent=self,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        dialog.add_buttons(
+            Gtk.STOCK_CANCEL,
+            Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN,
+            Gtk.ResponseType.OK,
+        )
+        current = appearance_get("wallpaper_dir", str(HOME / "Pictures/wallpapers"))
+        try:
+            dialog.set_current_folder(str(Path(current).expanduser()))
+        except Exception:
+            pass
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            chosen = dialog.get_filename()
+            if chosen:
+                appearance_set("wallpaper_dir", chosen)
+                self.update_wallpaper_dir_label()
+                run_bg([str(HOME / ".local/bin/wallpaper-select"), "restore"])
+        dialog.destroy()
+
+    def carousel_row(self):
+        row, switch = self.switch_row("Carrusel de fondos")
+        switch.set_active(appearance_get("wallpaper_carousel", "off") == "on")
+        switch.connect("notify::active", self.on_carousel_toggled)
+        return row
+
+    def on_carousel_toggled(self, switch, _pspec):
+        if self.loading:
+            return
+        cmd = "start" if switch.get_active() else "stop"
+        run_bg([str(HOME / ".local/bin/wallpaper-carousel"), cmd])
+
+    def carousel_interval_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label="Intervalo del carrusel", xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+
+        combo = Gtk.ComboBoxText()
+        for value in INTERVALS:
+            combo.append(value, f"{value} min")
+        current = appearance_get("wallpaper_carousel_interval", "10")
+        if current not in INTERVALS:
+            current = "10"
+        combo.set_active_id(current)
+        combo.connect("changed", self.on_interval_changed)
+        row.pack_start(combo, False, False, 0)
+        return row
+
+    def on_interval_changed(self, combo):
+        if self.loading:
+            return
+        value = combo.get_active_id()
+        if not value:
+            return
+        appearance_set("wallpaper_carousel_interval", value)
+        try:
+            rc = subprocess.run(
+                ["systemctl", "--user", "is-active", "--quiet", "wallpaper-carousel.service"],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            ).returncode
+            if rc == 0:
+                subprocess.Popen(
+                    ["systemctl", "--user", "restart", "wallpaper-carousel.service"],
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except OSError:
+            pass
+
+    # --- BLOQUEO E INICIO DE SESIÓN ---
+    def lock_bg_row(self):
+        row, _label, button = self.action_row("Fondo de la pantalla de bloqueo", "Elegir")
+        button.connect("clicked", self.on_pick_lock_bg)
+        return row
+
+    def on_pick_lock_bg(self, _button):
+        if self.loading:
+            return
+        try:
+            result = subprocess.run(
+                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", "Fondo de bloqueo"],
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return
+        value = (result.stdout or "").strip()
+        if result.returncode == 0 and value:
+            appearance_set("lock_bg", value)
+
+    def sddm_bg_row(self):
+        row, _label, button = self.action_row("Fondo del inicio de sesión", "Elegir")
+        button.connect("clicked", self.on_pick_sddm_bg)
+        return row
+
+    def on_pick_sddm_bg(self, _button):
+        if self.loading:
+            return
+        try:
+            result = subprocess.run(
+                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", "Fondo del login"],
+                capture_output=True,
+                text=True,
+            )
+        except OSError:
+            return
+        value = (result.stdout or "").strip()
+        if result.returncode == 0 and value:
+            appearance_set("sddm_bg", value)
+            sddm_install_term()
+
+    def lock_blur_row(self):
+        row, switch = self.switch_row("Desenfoque del bloqueo")
+        switch.set_active(appearance_get("lock_blur", "off") == "on")
+        switch.connect("notify::active", self.on_lock_blur_toggled)
+        return row
+
+    def on_lock_blur_toggled(self, switch, _pspec):
+        if self.loading:
+            return
+        appearance_set("lock_blur", "on" if switch.get_active() else "off")
+
+    def sddm_blur_row(self):
+        row, switch = self.switch_row("Desenfoque del inicio de sesión")
+        switch.set_active(appearance_get("sddm_blur", "on") == "on")
+        switch.connect("notify::active", self.on_sddm_blur_toggled)
+        return row
+
+    def on_sddm_blur_toggled(self, switch, _pspec):
+        if self.loading:
+            return
+        appearance_set("sddm_blur", "on" if switch.get_active() else "off")
+        sddm_install_term()
+
+    # --- INTERFAZ ---
+    def waybar_row(self):
+        row, _label, button = self.action_row("Barra y dock", "Abrir")
+        button.connect(
+            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/waybar-settings")])
+        )
+        return row
+
+    def dock_apps_row(self):
+        row, _label, button = self.action_row("Aplicaciones del dock", "Abrir")
+        button.connect(
+            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/dock-settings")])
+        )
+        return row
+
+    # --- SISTEMA Y PERFIL ---
+    def avatar_row(self):
+        row, _label, button = self.action_row("Avatar de perfil", "Cambiar")
+        button.connect(
+            "clicked",
+            lambda _b: run_term(str(HOME / ".local/bin/avatar-select")),
+        )
+        return row
+
+    def low_end_row(self):
+        row, switch = self.switch_row("Modo bajo consumo")
+        switch.set_active(appearance_get("low_end", "off") == "on")
+        switch.connect("notify::active", self.on_low_end_toggled)
+        return row
+
+    def on_low_end_toggled(self, _switch, _pspec):
+        if self.loading:
+            return
+        run_bg([str(HOME / ".local/bin/low-end-toggle"), "toggle"])
+
+    def charge_limit_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text_box.set_hexpand(True)
+        title = Gtk.Label(label="Límite de carga", xalign=0)
+        self.charge_label = Gtk.Label(xalign=0)
+        self.charge_label.get_style_context().add_class("section-title")
+        self.refresh_charge_limit()
+        text_box.pack_start(title, False, False, 0)
+        text_box.pack_start(self.charge_label, False, False, 0)
+        row.pack_start(text_box, True, True, 0)
+
+        button = Gtk.Button(label="Abrir")
+        button.get_style_context().add_class("action-button")
+        button.set_valign(Gtk.Align.CENTER)
+        button.connect(
+            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/battery-settings")])
+        )
+        row.pack_start(button, False, False, 0)
+        return row
+
+    def refresh_charge_limit(self):
+        self.charge_label.set_text(f"{read_charge_limit()} %")
+        return True
+
+    def on_destroy(self, _window):
+        if self.charge_source is not None:
+            GLib.source_remove(self.charge_source)
+            self.charge_source = None
+        Gtk.main_quit()
+
+
+def main():
+    load_css(THEME_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    load_css(SETTINGS_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+    panel = SettingsPanel()
+    panel.show_all()
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

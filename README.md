@@ -490,7 +490,11 @@ equipo o el servicio de forma manual y consciente.
 ## Ajustes de apariencia
 
 El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+,`
-(`scripts/.local/bin/settings-menu`). Entradas:
+(`scripts/.local/bin/settings-menu`). Es un **panel GTK3** organizado por secciones
+(Fondos, Bloqueo e inicio de sesión, Interfaz, Sistema y perfil) con switches
+reales para las opciones on/off (carrusel, desenfoques, modo bajo consumo).
+Comparte estilos con los otros paneles (`~/.config/theme/current.css` y
+`waybar/.config/waybar/settings.css`). Entradas:
 
 | Entrada | Qué hace |
 |---|---|
@@ -1272,8 +1276,8 @@ Archivos: `rofi/.config/rofi/config.rasi` y `power.rasi`.
 - El `icon-theme` sigue fijado a `WhiteSur-dark`; no se cambió en esta fase.
   Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
-- `settings-menu`, `avatar-select`, `wallpaper-select` y `dock-settings`
-  reutilizan `config.rasi`. `waybar-settings` es un panel GTK3 y no usa Rofi.
+- `avatar-select`, `wallpaper-select` y `dock-settings` reutilizan `config.rasi`.
+- `settings-menu` y `waybar-settings` son paneles GTK3 y no usan Rofi.
 - En `power.rasi`, el elemento seleccionado solo cambia de color y borde de
   acento; el tamaño se mantiene para evitar saltos de layout. Rofi no soporta
   transiciones ni escalado de iconos; el aumento real solo se aplica a los
