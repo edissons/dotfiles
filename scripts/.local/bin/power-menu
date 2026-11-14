@@ -50,6 +50,18 @@ case "$action" in
   logout)    hyprctl dispatch 'hl.dsp.exit()' ;;
   suspend)   systemctl suspend ;;
   hibernate) systemctl hibernate ;;
-  reboot)    systemctl reboot ;;
-  poweroff)  systemctl poweroff ;;
+  reboot)
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+      systemd-inhibit --what=handle-lid-switch:sleep --mode=block --why="Reiniciando" systemctl reboot
+    else
+      systemctl reboot
+    fi
+    ;;
+  poweroff)
+    if command -v systemd-inhibit >/dev/null 2>&1; then
+      systemd-inhibit --what=handle-lid-switch:sleep --mode=block --why="Apagando" systemctl poweroff
+    else
+      systemctl poweroff
+    fi
+    ;;
 esac
