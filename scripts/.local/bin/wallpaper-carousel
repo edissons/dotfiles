@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+A="$HOME/.local/bin/appearance"
+CACHE="$HOME/.cache/current-wallpaper"
+LOCK="${XDG_RUNTIME_DIR:-/tmp}/wallpaper-carousel.lock"
+IDX="$HOME/.cache/wallpaper-carousel.index"
+SERVICE="wallpaper-carousel.service"
+
+get_cfg() { "$A" get "$1" "$2"; }
+
+wallpaper_dir() {
+  local d
+  d=$(get_cfg wallpaper_dir "$HOME/Pictures/wallpapers")
+  printf '%s' "${d:-$HOME/Pictures/wallpapers}"
+}
+
+interval_sec() {
+  local min
+  min=$(get_cfg wallpaper_carousel_interval 10)
+  if [[ "$min" =~ ^[0-9]+$ ]] && [ "$min" -ge 1 ]; then
+    printf '%s' "$((min * 60))"
+  else
+    printf '600'
+  fi
+}
+
+list_images() {
+  local dir="${1:-}"
+  [ -n "$dir" ] && [ -d "$dir" ] || return 0
+  find "$dir" -type f \
+    \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
+    -print 2>/dev/null | sort || true
+}
+
+apply_wallpaper() {
+  local path="${1:-}"
+  [ -n "$path" ] && [ -f "$path" ] || return 1
+  local old tmp
+  old=$(pgrep -x swaybg || true)
+  setsid nohup swaybg -i "$path" -m fill >/dev/null 2>&1 &
+  sleep 0.4
+  if [ -n "$old" ]; then
+    # shellcheck disable=SC2086
+    kill $old 2>/dev/null || true
+  fi
+  mkdir -p "$(dirname "$CACHE")"
+  tmp=$(mktemp "${CACHE}.XXXXXX")
+  printf '%s\n' "$path" > "$tmp"
+  mv "$tmp" "$CACHE"
+}
+
+current_wallpaper() {
+  if [ -f "$CACHE" ]; then
+    cat "$CACHE" 2>/dev/null || true
+  fi
+}
+
+pick_next() {
+  local dir="${1:-}"
+  local -a imgs=()
+  local line
+  while IFS= read -r line; do
+    [ -n "$line" ] && imgs+=("$line")
+  done < <(list_images "$dir")
+
+  local n=${#imgs[@]}
+  if [ "$n" -lt 1 ]; then
+    return 1
+  fi
+  if [ "$n" -eq 1 ]; then
+    printf '%s\n' "${imgs[0]}"
+    return 0
+  fi
+
+  local mode current
+  mode=$(get_cfg wallpaper_shuffle on)
+  current=$(current_wallpaper)
+
+  if [ "$mode" = "on" ]; then
+    local -a candidates=()
+    local img
+    for img in "${imgs[@]}"; do
+      if [ "$img" != "$current" ]; then
+        candidates+=("$img")
+      fi
+    done
+    if [ "${#candidates[@]}" -lt 1 ]; then
+      candidates=("${imgs[@]}")
+    fi
+    printf '%s\n' "${candidates[RANDOM % ${#candidates[@]}]}"
+    return 0
+  fi
+
+  # secuencial
+  local idx=0 pos=-1 i
+  if [ -f "$IDX" ]; then
+    idx=$(cat "$IDX" 2>/dev/null || echo 0)
+  fi
+  [[ "$idx" =~ ^[0-9]+$ ]] || idx=0
+  for i in "${!imgs[@]}"; do
+    if [ "${imgs[$i]}" = "$current" ]; then
+      pos=$i
+      break
+    fi
+  done
+  if [ "$pos" -ge 0 ]; then
+    idx=$(( (pos + 1) % n ))
+  else
+    idx=$(( idx % n ))
+  fi
+  mkdir -p "$(dirname "$IDX")"
+  printf '%s\n' "$idx" > "$IDX"
+  printf '%s\n' "${imgs[$idx]}"
+}
+
+do_change() {
+  local dir next
+  dir=$(wallpaper_dir)
+  [ -d "$dir" ] || return 0
+  next=$(pick_next "$dir") || return 0
+  [ -n "$next" ] || return 0
+  apply_wallpaper "$next" || return 0
+}
+
+tick() {
+  if [ "$(get_cfg wallpaper_carousel off)" != "on" ]; then
+    return 0
+  fi
+  mkdir -p "$(dirname "$LOCK")"
+  exec 9>"$LOCK"
+  if ! flock -n 9; then
+    return 0
+  fi
+  do_change
+}
+
+next_forced() {
+  mkdir -p "$(dirname "$LOCK")"
+  exec 9>"$LOCK"
+  if ! flock -n 9; then
+    return 0
+  fi
+  do_change
+}
+
+run_loop() {
+  # tick inicial tras pequeño delay si hay sesión gráfica
+  sleep 2
+  if [ -n "${WAYLAND_DISPLAY:-}" ] && [ "$(get_cfg wallpaper_carousel off)" = "on" ]; then
+    tick || true
+  fi
+  while [ "$(get_cfg wallpaper_carousel off)" = "on" ]; do
+    if [ -z "${WAYLAND_DISPLAY:-}" ]; then
+      sleep 5
+      continue
+    fi
+    local sec
+    sec=$(interval_sec)
+    sleep "$sec"
+    [ "$(get_cfg wallpaper_carousel off)" = "on" ] || break
+    [ -n "${WAYLAND_DISPLAY:-}" ] || continue
+    tick || true
+  done
+}
+
+svc_start() {
+  "$A" set wallpaper_carousel on
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user enable --now "$SERVICE" 2>/dev/null || \
+      nohup "$0" run >/dev/null 2>&1 &
+  else
+    nohup "$0" run >/dev/null 2>&1 &
+  fi
+}
+
+svc_stop() {
+  "$A" set wallpaper_carousel off
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl --user disable --now "$SERVICE" 2>/dev/null || true
+  fi
+  pkill -f "wallpaper-carousel run" 2>/dev/null || true
+  pkill -f "wallpaper-carousel daemon" 2>/dev/null || true
+}
+
+svc_toggle() {
+  if [ "$(get_cfg wallpaper_carousel off)" = "on" ]; then
+    svc_stop
+    echo "Carrusel de fondos: Desactivado"
+  else
+    svc_start
+    echo "Carrusel de fondos: Activado"
+  fi
+}
+
+svc_status() {
+  local onoff state
+  onoff=$(get_cfg wallpaper_carousel off)
+  echo "Carrusel de fondos: $([ "$onoff" = on ] && echo Activado || echo Desactivado)"
+  echo "Intervalo: $(get_cfg wallpaper_carousel_interval 10) min"
+  echo "Carpeta: $(wallpaper_dir)"
+  if command -v systemctl >/dev/null 2>&1; then
+    state=$(systemctl --user is-active "$SERVICE" 2>/dev/null || echo inactive)
+    echo "Servicio: $state"
+  fi
+}
+
+set_interval() {
+  local min="${1:-}"
+  if [[ ! "$min" =~ ^[0-9]+$ ]] || [ "$min" -lt 1 ]; then
+    echo "Intervalo inválido: $min" >&2
+    exit 1
+  fi
+  "$A" set wallpaper_carousel_interval "$min"
+  if command -v systemctl >/dev/null 2>&1 && \
+     systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
+    systemctl --user restart "$SERVICE" 2>/dev/null || true
+  fi
+  echo "Intervalo del carrusel: $min min"
+}
+
+cmd="${1:-run}"
+case "$cmd" in
+  run|daemon|"") run_loop ;;
+  tick) tick ;;
+  next) next_forced ;;
+  start) svc_start ;;
+  stop) svc_stop ;;
+  toggle) svc_toggle ;;
+  status) svc_status ;;
+  set-interval) set_interval "${2:-}" ;;
+  *)
+    echo "Uso: $0 {run|tick|next|start|stop|toggle|status|set-interval <min>}" >&2
+    exit 1
+    ;;
+esac

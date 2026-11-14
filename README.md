@@ -187,6 +187,7 @@ activa: no edites allí esperando cambios en la sesión.
 | `scripts/.local/bin/*` | `~/.local/bin/*` |
 | `theme/.local/bin/theme-toggle` | `~/.local/bin/theme-toggle` |
 | `systemd/.config/systemd/user/battery-alert.service` | `~/.config/systemd/user/battery-alert.service` |
+| `systemd/.config/systemd/user/wallpaper-carousel.service` | `~/.config/systemd/user/wallpaper-carousel.service` |
 | `wallpapers/Pictures` | `~/Pictures` (si no existe) |
 | `wallpapers/Pictures/wallpapers` | `~/Pictures/wallpapers` (si `~/Pictures` ya existe) |
 
@@ -207,8 +208,12 @@ lo que ya esté correcto.
 - `~/.config/theme/appearance.conf` guarda fondos, desenfoque, dock y
   auto-ocultado de la barra. Está ignorado por Git.
 - `install.sh` crea `~/.config/battery-alert/config` por defecto si no existe
-  (intervalo y tonos MP3 del repo) e intenta habilitar/iniciar
-  `battery-alert.service` (best-effort, sin `sudo`).
+  (intervalo y tonos MP3 del repo), añade los valores por defecto del carrusel de
+  fondos en `appearance.conf` si faltan (`off`, 10 min, `shuffle on`) sin
+  sobrescribir la configuración existente, enlaza
+  `wallpaper-carousel.service`, ejecuta `systemctl --user daemon-reload` e
+  intenta habilitar/iniciar `battery-alert.service` (best-effort, sin `sudo`).
+  No habilita el carrusel por defecto.
 - `waybar-settings` es un panel GTK3: edita `modules.json` de forma atómica,
   aplica un reinicio de Waybar debounced de ~250 ms y aplica los cambios del dock
   al instante con `dock-restart`. Carga `settings.css` después de
@@ -224,8 +229,9 @@ engranaje de Waybar o `SUPER+,`.
 - **Tema claro/oscuro:** `theme-toggle` (o `SUPER+T`) alterna la paleta y las
   piezas que la consumen. El lockscreen sigue el modo activo; SDDM se configura
   aparte con `sddm-install dark|light`.
-- **Menú de Ajustes:** fondos de escritorio, bloqueo y login; desenfoques; avatar
-  de perfil; entrada al panel «Barra y dock» y a las aplicaciones del dock.
+- **Menú de Ajustes:** fondos de escritorio, bloqueo y login; carpeta e intervalo
+  del carrusel de fondos; desenfoques; avatar de perfil; entrada al panel «Barra y
+  dock» y a las aplicaciones del dock.
 - **Panel «Barra y dock»:** una fila por módulo con zona y switch, switch de
   auto-ocultado de la barra y controles del dock (activo, ocultar
   automáticamente o mostrar siempre). La entrada «Aplicaciones del dock» vive
@@ -411,9 +417,9 @@ autostart por tu cuenta, revísalos por separado.
 | `swaync/` | Estilos de notificaciones. |
 | `nwg-dock-hyprland/` | Estilos del dock. |
 | `sddm/glass/` | Tema del greeter (QML, `theme.conf` e iconos). |
-| `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar y energía. |
+| `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar, fondos y energía. |
 | `scripts/system/` | Servicios opcionales (`optional-services`). |
-| `systemd/` | Unidades systemd de usuario (`battery-alert.service`). |
+| `systemd/` | Unidades systemd de usuario (`battery-alert.service`, `wallpaper-carousel.service`). |
 | `wallpapers/` | Fondos de ejemplo. |
 | `fastfetch/` | Configuración de Fastfetch. |
 | `docs/screenshots/` | Capturas usadas en este README. |
@@ -489,6 +495,9 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Entrada | Qué hace |
 |---|---|
 | Fondo de escritorio | Abre `wallpaper-select` (también `SUPER+SHIFT+W`). |
+| Carpeta de fondos | Selector de directorio para `wallpaper_dir`, usado por el selector de fondos y el carrusel. |
+| Carrusel de fondos | Activa o desactiva el cambio periódico de fondos (`Activado`/`Desactivado`) mediante `wallpaper-carousel`. |
+| Intervalo del carrusel | Elige cada cuánto cambia el fondo: 5, 10 (recomendado), 15, 30 o 60 min. |
 | Avatar de perfil | Abre `avatar-select` en una terminal (puede pedir `sudo`). |
 | Fondo de la pantalla de bloqueo | Igual que el escritorio, una imagen de la carpeta de wallpapers u otra imagen. |
 | Fondo del inicio de sesión | Igual, y sincroniza SDDM con `sddm-install` (pide `sudo`). |
@@ -525,6 +534,9 @@ Los ajustes se guardan en `~/.config/theme/appearance.conf` (ignorado por Git) c
 | Clave | Valores | Por defecto |
 |---|---|---|
 | `wallpaper_dir` | ruta de una carpeta | `~/Pictures/wallpapers` |
+| `wallpaper_carousel` | `off` / `on` | `off` |
+| `wallpaper_carousel_interval` | minutos | `10` |
+| `wallpaper_shuffle` | `on` / `off` | `on` |
 | `lock_bg` | `desktop` o ruta de una imagen | `desktop` |
 | `lock_blur` | `on` / `off` | `off` |
 | `sddm_bg` | `desktop` o ruta de una imagen | `desktop` |
@@ -604,6 +616,40 @@ imagen…». El fondo de escritorio sigue disponible con `SUPER+SHIFT+W`.
 `wallpaper_dir` debe apuntar al directorio cuyas subcarpetas directas quieras
 usar como categorías. Si tu colección tiene un nivel contenedor extra, apunta al
 nivel que contiene esas subcarpetas.
+
+## Carrusel de fondos
+
+`wallpaper-carousel` cambia el fondo de escritorio periódicamente usando las
+imágenes de `wallpaper_dir` (`.jpg`, `.jpeg`, `.png`, `.webp`, búsqueda
+recursiva) con `swaybg`, y actualiza `~/.cache/current-wallpaper`.
+
+- **Uso desde Ajustes:** «Carpeta de fondos» define `wallpaper_dir`, «Carrusel de
+  fondos» lo activa o desactiva, e «Intervalo del carrusel» ajusta la frecuencia.
+  Los intervalos sugeridos son 5, 10 (recomendado), 15, 30 y 60 minutos.
+- **Uso por comandos:**
+
+  ```bash
+  ~/.local/bin/wallpaper-carousel start
+  ~/.local/bin/wallpaper-carousel stop
+  ~/.local/bin/wallpaper-carousel toggle
+  ~/.local/bin/wallpaper-carousel status
+  ~/.local/bin/wallpaper-carousel next
+  ~/.local/bin/wallpaper-carousel set-interval 10
+  ```
+
+- **Servicio:** `wallpaper-carousel.service` es una unidad systemd de usuario
+  enlazada por `install.sh` (`WantedBy=default.target`). El toggle del carrusel
+  la activa o desactiva (`enable/disable --now`). Hyprland la inicia al arrancar
+  si `wallpaper_carousel=on`. `install.sh` hace `daemon-reload` y añade los
+  valores por defecto del carrusel (`off`, 10 min, `shuffle on`) sin sobrescribir
+  la configuración existente, pero no lo habilita por defecto. SDDM no rota
+  automáticamente.
+- **Comportamiento:** evita instancias duplicadas (`flock`) y espera
+  `WAYLAND_DISPLAY` antes de actuar.
+- **Relación con la pantalla de bloqueo:** con `lock_bg=desktop`, el bloqueo usa
+  siempre el fondo actual (`~/.cache/current-wallpaper`). Como el carrusel
+  actualiza esa caché en cada cambio, la pantalla de bloqueo toma el fondo
+  vigente al momento de bloquear.
 
 ## Modo bajo consumo
 
@@ -1411,6 +1457,9 @@ español y usa `⊞` para la tecla Super:
   imagen) sobre `wallpaper_dir`; admite `--desktop`, `--custom` y `--prompt`.
 - `scripts/.local/bin/wallpaper-select`: fondo y caché
   `~/.cache/current-wallpaper`.
+- `scripts/.local/bin/wallpaper-carousel`: carrusel de fondos sobre
+  `wallpaper_dir` (`start|stop|toggle|status|next|set-interval <min>`), con
+  servicio systemd de usuario y actualización de `~/.cache/current-wallpaper`.
 - `scripts/.local/bin/power-menu`, `updates-count`, `hypr-test`,
   `hyprland-glass`.
 - `scripts/.local/bin/keybinds-viewer`: visor Rofi de atajos de Hyprland con

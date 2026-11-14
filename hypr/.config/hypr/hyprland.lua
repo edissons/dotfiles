@@ -200,6 +200,8 @@ hl.bind("CTRL + ALT + Delete",
 hl.on("hyprland.start", function()
     hl.exec_cmd("hyprctl setcursor WhiteSur-cursors 24")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/wallpaper-select restore")
+    -- Carrusel de fondos (si está activado)
+    hl.exec_cmd("bash -lc '[ \"$(~/.local/bin/appearance get wallpaper_carousel off)\" = on ] && systemctl --user start wallpaper-carousel.service 2>/dev/null || true'")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/waybar-restart")
     hl.exec_cmd("dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/dock-restart")

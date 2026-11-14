@@ -1,0 +1,14 @@
+# Unidad de usuario enlazada por install.sh (link_configs) a ~/.config/systemd/user/.
+[Unit]
+Description=Carrusel de fondos de escritorio
+PartOf=graphical-session.target
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/wallpaper-carousel run
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

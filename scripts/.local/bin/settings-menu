@@ -16,6 +16,43 @@ pick_bg() {
   "$HOME/.local/bin/wallpaper-pick" --desktop --custom --prompt "$1"
 }
 
+pick_wallpaper_dir() {
+  local current chosen
+  current="$($A get wallpaper_dir "$HOME/Pictures/wallpapers")"
+  chosen=$(zenity --file-selection --directory --title="Carpeta de fondos" \
+    --filename="${current%/}/" 2>/dev/null) || return 0
+  [ -n "$chosen" ] || return 0
+  $A set wallpaper_dir "$chosen"
+  "$HOME/.local/bin/wallpaper-select" restore || true
+}
+
+pick_carousel_interval() {
+  local current
+  current="$($A get wallpaper_carousel_interval 10)"
+  local choice
+  choice=$(printf '%s\n' \
+    "5 min" \
+    "10 min (recomendado)" \
+    "15 min" \
+    "30 min" \
+    "60 min" \
+    "Cancelar" | R -p "Intervalo del carrusel" -theme-str 'listview { lines: 6; }') || return 0
+  local val=""
+  case "$choice" in
+    0) val=5 ;;
+    1) val=10 ;;
+    2) val=15 ;;
+    3) val=30 ;;
+    4) val=60 ;;
+    *) return 0 ;;
+  esac
+  $A set wallpaper_carousel_interval "$val"
+  if command -v systemctl >/dev/null 2>&1 && \
+     systemctl --user is-active --quiet wallpaper-carousel.service 2>/dev/null; then
+    systemctl --user restart wallpaper-carousel.service 2>/dev/null || true
+  fi
+}
+
 while true; do
   charge_limit=""
   for bat in /sys/class/power_supply/BAT*; do
@@ -25,6 +62,9 @@ while true; do
   done
   charge_limit=${charge_limit:-100}
   items=( "Fondo de escritorio"
+          "Carpeta de fondos"
+          "Carrusel de fondos: $(onoff wallpaper_carousel off)"
+          "Intervalo del carrusel: $($A get wallpaper_carousel_interval 10) min"
           "Avatar de perfil"
           "Fondo de la pantalla de bloqueo"
           "Fondo del inicio de sesión"
@@ -34,18 +74,21 @@ while true; do
           "Aplicaciones del dock"
           "Modo bajo consumo: $(onoff low_end off)"
           "Límite de carga: ${charge_limit}%" )
-  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 10; }') || exit 0
+  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 13; }') || exit 0
   case "$idx" in
     0) "$HOME/.local/bin/wallpaper-select" ;;
-    1) term "$HOME/.local/bin/avatar-select" ;;
-    2) v=$(pick_bg "Fondo de bloqueo") && [ -n "$v" ] && $A set lock_bg "$v" ;;
-    3) v=$(pick_bg "Fondo del login") && [ -n "$v" ] && {
+    1) pick_wallpaper_dir ;;
+    2) "$HOME/.local/bin/wallpaper-carousel" toggle ;;
+    3) pick_carousel_interval ;;
+    4) term "$HOME/.local/bin/avatar-select" ;;
+    5) v=$(pick_bg "Fondo de bloqueo") && [ -n "$v" ] && $A set lock_bg "$v" ;;
+    6) v=$(pick_bg "Fondo del login") && [ -n "$v" ] && {
          $A set sddm_bg "$v"; term "$HOME/.local/bin/sddm-install $(sddm_mode)"; } ;;
-    4) toggle lock_blur off ;;
-    5) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
-    6) "$HOME/.local/bin/waybar-settings" ;;
-    7) "$HOME/.local/bin/dock-settings" ;;
-    8) "$HOME/.local/bin/low-end-toggle" toggle ;;
-    9) "$HOME/.local/bin/battery-settings" ;;
+    7) toggle lock_blur off ;;
+    8) toggle sddm_blur on; term "$HOME/.local/bin/sddm-install $(sddm_mode)" ;;
+    9) "$HOME/.local/bin/waybar-settings" ;;
+    10) "$HOME/.local/bin/dock-settings" ;;
+    11) "$HOME/.local/bin/low-end-toggle" toggle ;;
+    12) "$HOME/.local/bin/battery-settings" ;;
   esac
 done

@@ -454,6 +454,7 @@ link_configs() {
   done
   safe_link "$REPO/theme/.local/bin/theme-toggle" "$HOME/.local/bin/theme-toggle"
   safe_link "$REPO/systemd/.config/systemd/user/battery-alert.service" "$HOME/.config/systemd/user/battery-alert.service"
+  safe_link "$REPO/systemd/.config/systemd/user/wallpaper-carousel.service" "$HOME/.config/systemd/user/wallpaper-carousel.service"
 }
 
 ensure_pictures() {
@@ -499,6 +500,29 @@ write_if_missing() {
   mkdir -p -- "$(dirname -- "$file")"
   printf '%s' "$content" > "$file"
   log "Created $file"
+}
+
+ensure_appearance_key() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if (( DRY_RUN )); then
+    if [[ -f "$file" ]] && grep -q "^${key}=" "$file" 2>/dev/null; then
+      vlog "appearance key exists: $key"
+    else
+      log "[dry-run] ensure $key=$value in $file"
+    fi
+    return 0
+  fi
+  assert_safe_write_path "$file" || return 1
+  mkdir -p -- "$(dirname -- "$file")"
+  [[ -f "$file" ]] || : > "$file"
+  if grep -q "^${key}=" "$file" 2>/dev/null; then
+    vlog "appearance key exists: $key"
+    return 0
+  fi
+  printf '%s=%s\n' "$key" "$value" >> "$file"
+  log "Added appearance key: $key=$value"
 }
 
 ensure_current_links() {
@@ -572,6 +596,9 @@ create_runtime_defaults() {
   write_if_missing "$theme_dir/mode" $'dark\n'
   write_if_missing "$theme_dir/appearance.conf" \
     $'lock_bg=desktop\nlock_blur=off\nsddm_bg=desktop\nsddm_blur=on\ndock_enabled=on\ndock_autohide=on\nbar_autohide=off\n'
+  ensure_appearance_key "$theme_dir/appearance.conf" "wallpaper_carousel" "off"
+  ensure_appearance_key "$theme_dir/appearance.conf" "wallpaper_carousel_interval" "10"
+  ensure_appearance_key "$theme_dir/appearance.conf" "wallpaper_shuffle" "on"
   write_if_missing "$theme_dir/avatar.conf" $'avatar_mode=initials\navatar_image=\n'
   write_if_missing "$HOME/.config/battery-alert/config" \
     "# Configuración de battery-alert (creada por install.sh si no existía).
@@ -590,21 +617,27 @@ SOUND_CHARGED=$HOME/dotfiles/mac_os_breeze.mp3
 
 enable_user_services() {
   if (( DRY_RUN )); then
-    log "[dry-run] systemctl --user daemon-reload && enable --now battery-alert.service"
-    return 0
-  fi
-  if [[ ! -e "$HOME/.config/systemd/user/battery-alert.service" && ! -L "$HOME/.config/systemd/user/battery-alert.service" ]]; then
-    vlog "battery-alert.service not linked; skipping user service enable"
+    log "[dry-run] systemctl --user daemon-reload"
+    log "[dry-run] systemctl --user enable --now battery-alert.service"
     return 0
   fi
   if ! command -v systemctl >/dev/null 2>&1; then
-    warn "systemctl not found; cannot enable battery-alert.service"
+    warn "systemctl not found; cannot reload/enable user services"
     return 0
   fi
-  if ! systemctl --user daemon-reload && systemctl --user enable --now battery-alert.service; then
-    warn "Could not enable/start battery-alert.service (user systemd unavailable?); run: systemctl --user daemon-reload && systemctl --user enable --now battery-alert.service"
+  if ! systemctl --user daemon-reload; then
+    warn "Could not run systemctl --user daemon-reload"
   else
-    vlog "battery-alert.service enabled/started"
+    vlog "systemctl --user daemon-reload ok"
+  fi
+  if [[ -e "$HOME/.config/systemd/user/battery-alert.service" || -L "$HOME/.config/systemd/user/battery-alert.service" ]]; then
+    if ! systemctl --user enable --now battery-alert.service; then
+      warn "Could not enable/start battery-alert.service (user systemd unavailable?); run: systemctl --user enable --now battery-alert.service"
+    else
+      vlog "battery-alert.service enabled/started"
+    fi
+  else
+    vlog "battery-alert.service not linked; skipping enable"
   fi
 }
 
