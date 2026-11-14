@@ -6,13 +6,13 @@ LOCK="$RUNTIME/battery-alert.lock"
 STATE="$RUNTIME/battery-alert.state"
 LOG="$RUNTIME/battery-alert.log"
 CFG="${XDG_CONFIG_HOME:-$HOME/.config}/battery-alert/config"
-INTERVAL=15
+INTERVAL=${INTERVAL:-3}
 
 # Defaults
-SOUND_LOW="${SOUND_LOW:-/usr/share/sounds/freedesktop/stereo/dialog-warning.oga}"
-SOUND_CRITICAL="${SOUND_CRITICAL:-/usr/share/sounds/freedesktop/stereo/suspend-error.oga}"
-SOUND_PLUG="${SOUND_PLUG:-/usr/share/sounds/freedesktop/stereo/power-plug.oga}"
-SOUND_UNPLUG="${SOUND_UNPLUG:-/usr/share/sounds/freedesktop/stereo/power-unplug.oga}"
+SOUND_LOW="${SOUND_LOW:-$HOME/dotfiles/low_ping.mp3}"
+SOUND_CRITICAL="${SOUND_CRITICAL:-$HOME/dotfiles/low_ping.mp3}"
+SOUND_PLUG="${SOUND_PLUG:-$HOME/dotfiles/mac_os_breeze.mp3}"
+SOUND_UNPLUG="${SOUND_UNPLUG:-$HOME/dotfiles/mac_os_breeze.mp3}"
 LOW_THRESHOLD="${LOW_THRESHOLD:-20}"
 CRITICAL_THRESHOLD="${CRITICAL_THRESHOLD:-10}"
 VERY_CRITICAL_THRESHOLD="${VERY_CRITICAL_THRESHOLD:-5}"
@@ -43,7 +43,7 @@ load_config() {
             SOUND_LOW=*|SOUND_CRITICAL=*|SOUND_PLUG=*|SOUND_UNPLUG=*|SOUND_CHARGED=*|\
             LOW_THRESHOLD=*|CRITICAL_THRESHOLD=*|VERY_CRITICAL_THRESHOLD=*|\
             LOW_REARM=*|CRITICAL_REARM=*|VERY_CRITICAL_REARM=*|\
-            CHARGE_LIMIT_FALLBACK=*|CHARGED_REARM_DELTA=*)
+            CHARGE_LIMIT_FALLBACK=*|CHARGED_REARM_DELTA=*|INTERVAL=*)
                 key=${line%%=*}
                 val=${line#*=}
                 # quita comillas simples/dobles envolventes
@@ -62,6 +62,10 @@ if ! flock -n 9; then
 fi
 
 load_config
+
+if ! [[ ${INTERVAL} =~ ^[0-9]+$ ]] || [ "$INTERVAL" -lt 1 ] || [ "$INTERVAL" -gt 3600 ]; then
+    INTERVAL=3
+fi
 
 find_battery() {
     local d
@@ -99,7 +103,7 @@ play_canberra_id() {
 
 play_sound() {
     local kind=${1:-}
-    local file id
+    local file id ext ext_lc
     case "$kind" in
         low|warning)
             file=$SOUND_LOW; id=dialog-warning ;;
@@ -125,27 +129,60 @@ play_sound() {
     esac
 
     if [ -n "$file" ] && [ -f "$file" ]; then
-        if command -v pw-play >/dev/null 2>&1; then
-            pw-play "$file" >/dev/null 2>&1 &
-            dbg "sound kind=$kind player=pw-play rc=0"
-            return 0
-        elif command -v paplay >/dev/null 2>&1; then
-            paplay "$file" >/dev/null 2>&1 &
-            dbg "sound kind=$kind player=paplay rc=0"
-            return 0
-        elif command -v canberra-gtk-play >/dev/null 2>&1; then
-            canberra-gtk-play -f "$file" >/dev/null 2>&1 &
-            dbg "sound kind=$kind player=canberra-gtk-play rc=0"
-            return 0
-        elif command -v aplay >/dev/null 2>&1; then
-            aplay -q "$file" >/dev/null 2>&1 &
-            dbg "sound kind=$kind player=aplay rc=0"
-            return 0
-        elif command -v mpv >/dev/null 2>&1; then
-            mpv --no-video --really-quiet "$file" >/dev/null 2>&1 &
-            dbg "sound kind=$kind player=mpv rc=0"
-            return 0
-        fi
+        ext=${file##*.}
+        ext_lc=$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')
+        case "$ext_lc" in
+            mp3|m4a|aac|flac|opus|wma|webm)
+                if command -v mpv >/dev/null 2>&1; then
+                    mpv --no-video --really-quiet "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=mpv rc=0"
+                    return 0
+                elif command -v ffplay >/dev/null 2>&1; then
+                    ffplay -nodisp -autoexit -loglevel quiet "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=ffplay rc=0"
+                    return 0
+                elif command -v pw-play >/dev/null 2>&1; then
+                    pw-play "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=pw-play rc=0"
+                    return 0
+                elif command -v paplay >/dev/null 2>&1; then
+                    paplay "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=paplay rc=0"
+                    return 0
+                elif command -v canberra-gtk-play >/dev/null 2>&1; then
+                    canberra-gtk-play -f "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=canberra-gtk-play rc=0"
+                    return 0
+                elif command -v aplay >/dev/null 2>&1; then
+                    aplay -q "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=aplay rc=0"
+                    return 0
+                fi
+                ;;
+            *)
+                if command -v pw-play >/dev/null 2>&1; then
+                    pw-play "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=pw-play rc=0"
+                    return 0
+                elif command -v paplay >/dev/null 2>&1; then
+                    paplay "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=paplay rc=0"
+                    return 0
+                elif command -v canberra-gtk-play >/dev/null 2>&1; then
+                    canberra-gtk-play -f "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=canberra-gtk-play rc=0"
+                    return 0
+                elif command -v aplay >/dev/null 2>&1; then
+                    aplay -q "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=aplay rc=0"
+                    return 0
+                elif command -v mpv >/dev/null 2>&1; then
+                    mpv --no-video --really-quiet "$file" >/dev/null 2>&1 &
+                    dbg "sound kind=$kind player=mpv rc=0"
+                    return 0
+                fi
+                ;;
+        esac
     fi
 
     # Fallback por id de sonido del tema
