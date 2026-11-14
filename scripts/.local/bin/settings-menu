@@ -198,17 +198,58 @@ class SettingsPanel(Gtk.Window):
         label.get_style_context().add_class("section-title")
         return label
 
-    def action_row(self, title, button_label):
+    def action_row(self, title):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.get_style_context().add_class("setting-row")
         label = Gtk.Label(label=title, xalign=0)
         label.set_hexpand(True)
         label.set_ellipsize(Pango.EllipsizeMode.END)
         row.pack_start(label, True, True, 0)
-        button = Gtk.Button(label=button_label)
-        button.get_style_context().add_class("action-button")
-        row.pack_start(button, False, False, 0)
-        return row, label, button
+        chevron = Gtk.Label(label="›")
+        chevron.get_style_context().add_class("row-chevron")
+        chevron.set_valign(Gtk.Align.CENTER)
+        row.pack_start(chevron, False, False, 0)
+        return row, label, chevron
+
+    def make_clickable_row(self, row, activate_cb):
+        row.get_style_context().add_class("clickable-row")
+        event_box = Gtk.EventBox()
+        event_box.set_visible_window(False)
+        event_box.add_events(
+            Gdk.EventMask.BUTTON_RELEASE_MASK
+            | Gdk.EventMask.ENTER_NOTIFY_MASK
+            | Gdk.EventMask.LEAVE_NOTIFY_MASK
+        )
+        event_box.add(row)
+
+        def on_release(_widget, event):
+            if event.button == 1:
+                activate_cb()
+            return False
+
+        def on_enter(widget, _event):
+            window = widget.get_window()
+            if window is not None:
+                display = Gdk.Display.get_default()
+                try:
+                    cursor = Gdk.Cursor.new_from_name(display, "pointer")
+                except Exception:
+                    cursor = None
+                if cursor is None:
+                    cursor = Gdk.Cursor.new_for_display(display, Gdk.CursorType.HAND1)
+                window.set_cursor(cursor)
+            return False
+
+        def on_leave(widget, _event):
+            window = widget.get_window()
+            if window is not None:
+                window.set_cursor(None)
+            return False
+
+        event_box.connect("button-release-event", on_release)
+        event_box.connect("enter-notify-event", on_enter)
+        event_box.connect("leave-notify-event", on_leave)
+        return event_box
 
     def switch_row(self, title):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -224,12 +265,10 @@ class SettingsPanel(Gtk.Window):
 
     # --- FONDOS ---
     def wallpaper_row(self):
-        row, _label, button = self.action_row("Fondo de escritorio", "Elegir")
-        button.connect(
-            "clicked",
-            lambda _b: run_bg([str(HOME / ".local/bin/wallpaper-select")]),
+        row, _label, _chevron = self.action_row("Fondo de escritorio")
+        return self.make_clickable_row(
+            row, lambda: run_bg([str(HOME / ".local/bin/wallpaper-select")])
         )
-        return row
 
     def wallpaper_dir_row(self):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -248,19 +287,18 @@ class SettingsPanel(Gtk.Window):
         text_box.pack_start(self.wallpaper_dir_label, False, False, 0)
         row.pack_start(text_box, True, True, 0)
 
-        button = Gtk.Button(label="Cambiar")
-        button.get_style_context().add_class("action-button")
-        button.set_valign(Gtk.Align.CENTER)
-        button.connect("clicked", self.on_change_wallpaper_dir)
-        row.pack_start(button, False, False, 0)
-        return row
+        chevron = Gtk.Label(label="›")
+        chevron.get_style_context().add_class("row-chevron")
+        chevron.set_valign(Gtk.Align.CENTER)
+        row.pack_start(chevron, False, False, 0)
+        return self.make_clickable_row(row, self.on_change_wallpaper_dir)
 
     def update_wallpaper_dir_label(self):
         current = appearance_get("wallpaper_dir", str(HOME / "Pictures/wallpapers"))
         self.wallpaper_dir_label.set_text(current)
         self.wallpaper_dir_label.set_tooltip_text(current)
 
-    def on_change_wallpaper_dir(self, _button):
+    def on_change_wallpaper_dir(self, *_args):
         if self.loading:
             return
         dialog = Gtk.FileChooserDialog(
@@ -344,11 +382,10 @@ class SettingsPanel(Gtk.Window):
 
     # --- BLOQUEO E INICIO DE SESIÓN ---
     def lock_bg_row(self):
-        row, _label, button = self.action_row("Fondo de la pantalla de bloqueo", "Elegir")
-        button.connect("clicked", self.on_pick_lock_bg)
-        return row
+        row, _label, _chevron = self.action_row("Fondo de la pantalla de bloqueo")
+        return self.make_clickable_row(row, self.on_pick_lock_bg)
 
-    def on_pick_lock_bg(self, _button):
+    def on_pick_lock_bg(self, *_args):
         if self.loading:
             return
         try:
@@ -364,11 +401,10 @@ class SettingsPanel(Gtk.Window):
             appearance_set("lock_bg", value)
 
     def sddm_bg_row(self):
-        row, _label, button = self.action_row("Fondo del inicio de sesión", "Elegir")
-        button.connect("clicked", self.on_pick_sddm_bg)
-        return row
+        row, _label, _chevron = self.action_row("Fondo del inicio de sesión")
+        return self.make_clickable_row(row, self.on_pick_sddm_bg)
 
-    def on_pick_sddm_bg(self, _button):
+    def on_pick_sddm_bg(self, *_args):
         if self.loading:
             return
         try:
@@ -409,27 +445,23 @@ class SettingsPanel(Gtk.Window):
 
     # --- INTERFAZ ---
     def waybar_row(self):
-        row, _label, button = self.action_row("Barra y dock", "Abrir")
-        button.connect(
-            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/waybar-settings")])
+        row, _label, _chevron = self.action_row("Barra y dock")
+        return self.make_clickable_row(
+            row, lambda: run_bg([str(HOME / ".local/bin/waybar-settings")])
         )
-        return row
 
     def dock_apps_row(self):
-        row, _label, button = self.action_row("Aplicaciones del dock", "Abrir")
-        button.connect(
-            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/dock-settings")])
+        row, _label, _chevron = self.action_row("Aplicaciones del dock")
+        return self.make_clickable_row(
+            row, lambda: run_bg([str(HOME / ".local/bin/dock-settings")])
         )
-        return row
 
     # --- SISTEMA Y PERFIL ---
     def avatar_row(self):
-        row, _label, button = self.action_row("Avatar de perfil", "Cambiar")
-        button.connect(
-            "clicked",
-            lambda _b: run_term(str(HOME / ".local/bin/avatar-select")),
+        row, _label, _chevron = self.action_row("Avatar de perfil")
+        return self.make_clickable_row(
+            row, lambda: run_term(str(HOME / ".local/bin/avatar-select"))
         )
-        return row
 
     def low_end_row(self):
         row, switch = self.switch_row("Modo bajo consumo")
@@ -456,14 +488,13 @@ class SettingsPanel(Gtk.Window):
         text_box.pack_start(self.charge_label, False, False, 0)
         row.pack_start(text_box, True, True, 0)
 
-        button = Gtk.Button(label="Abrir")
-        button.get_style_context().add_class("action-button")
-        button.set_valign(Gtk.Align.CENTER)
-        button.connect(
-            "clicked", lambda _b: run_bg([str(HOME / ".local/bin/battery-settings")])
+        chevron = Gtk.Label(label="›")
+        chevron.get_style_context().add_class("row-chevron")
+        chevron.set_valign(Gtk.Align.CENTER)
+        row.pack_start(chevron, False, False, 0)
+        return self.make_clickable_row(
+            row, lambda: run_bg([str(HOME / ".local/bin/battery-settings")])
         )
-        row.pack_start(button, False, False, 0)
-        return row
 
     def refresh_charge_limit(self):
         self.charge_label.set_text(f"{read_charge_limit()} %")

@@ -186,6 +186,27 @@ switch:disabled,
         outline-offset: 2px;
     }
 
+    /* Clickable rows */
+    .clickable-row {
+        transition: background-color 140ms ease, border-color 140ms ease;
+    }
+
+    .clickable-row:hover {
+        background-color: alpha(@accent, 0.08);
+        border-color: alpha(@accent, 0.35);
+    }
+
+    .clickable-row:active {
+        background-color: alpha(@accent, 0.14);
+    }
+
+    .row-chevron {
+        color: @subtext;
+        font-size: 16px;
+        font-weight: 600;
+        margin-left: 4px;
+    }
+
     /* Zone selector */
     combobox button {
         min-width: 0;
