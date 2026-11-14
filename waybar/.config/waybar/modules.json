@@ -13,14 +13,14 @@
     "temperature",
     "backlight",
     "pulseaudio",
-    "battery",
     "clock",
     "custom/keybinds",
     "custom/theme",
     "custom/settings",
-    "custom/power",
     "custom/gaming",
-    "custom/notifications"
+    "custom/notifications",
+    "battery",
+    "custom/power"
   ],
   "disabled": [
     "temperature"

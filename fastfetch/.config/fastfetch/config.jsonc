@@ -46,7 +46,8 @@
     {
       "type": "packages",
       "key": "  \uf187 Packages",
-      "keyColor": "bright_yellow"
+      "keyColor": "bright_yellow",
+      "format": "{pacman} pacman, {flatpak-all} flatpak, {appimage} appimage"
     },
     {
       "type": "shell",
