@@ -8,3 +8,7 @@ theme/.config/theme/avatar.png
 theme/.config/theme/avatars/custom/
 theme/.config/theme/appearance.conf
 theme/.config/theme/backgrounds/
+
+# Python bytecode
+__pycache__/
+*.pyc
