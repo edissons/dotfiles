@@ -412,7 +412,7 @@ autostart por tu cuenta, revísalos por separado.
 | `hypr/` | Sesión y configuración de Hyprland en Lua, más `hyprlock.conf`, `hypridle.conf` y los `.conf` archivados en `legacy/`. |
 | `waybar/` | `style.css`, `settings.css`, `modules.json` y `definitions.json`. |
 | `theme/` | Paletas `dark/` y `light/`, avatares base y `theme-toggle`. |
-| `rofi/` | Lanzador y menú de energía. |
+| `rofi/` | Configuración del lanzador Rofi (`config.rasi`; `power.rasi` se conserva como heredado, sin uso por `power-menu`). |
 | `kitty/` | Configuración de la terminal. |
 | `swaync/` | Estilos de notificaciones. |
 | `nwg-dock-hyprland/` | Estilos del dock. |
@@ -1261,34 +1261,31 @@ swaync-client -rs
 
 ## Rofi
 
-Archivos: `rofi/.config/rofi/config.rasi` y `power.rasi`.
+Archivo activo para los menús Rofi: `rofi/.config/rofi/config.rasi`. El
+`power-menu` ya no usa Rofi ni `power.rasi`: es un panel GTK3
+(`scripts/.local/bin/power-menu`, Python/GTK3, estilo Glasshouse) que carga los
+tokens de `~/.config/theme/current.css` y `waybar/.config/waybar/settings.css`.
 
-- Lanzador: `font: "SF Pro Text 13"`.
-- Menú de energía: `font: "SF Pro Text 13"`; cada opción muestra un icono de
-  44 px y una etiqueta `SF Pro Text 10` debajo, dentro de un botón circular
-  (`border-radius: 52px`) en una fila de 6 columnas.
-- `power-menu` usa `SF Pro Text 13` para el mensaje de confirmación; la opción
-  `Cancelar` usa el tamaño compacto de 10 px definido en `power.rasi`.
-- El menú de energía activa `hover-select`, `me-select-entry: ""` y
-  `me-accept-entry: "MousePrimary"` en `power.rasi`. Así, al pasar el cursor la
-  opción queda seleccionada y un solo clic la activa, tanto en el menú principal
-  como en la confirmación.
-- El `icon-theme` sigue fijado a `WhiteSur-dark`; no se cambió en esta fase.
-  Es una inconsistencia conocida con `theme-toggle`, que usa
+- Lanzador: `font: "SF Pro Text 13"` (`config.rasi`).
+- Menú de energía (`power-menu`): fila de 6 acciones con iconos SVG recoloreados
+  según el tema (cacheados en `~/.cache/power-menu-icons`), confirmación con
+  cuenta atrás de 3 s dentro de la propia ventana y botón «Cancelar».
+  `Esc`/`BackSpace`/«Cancelar» abortan la confirmación; `Esc` cierra el menú
+  principal. Mantiene los mismos comandos e inhibición de idle/suspensión al
+  reiniciar o apagar. El bloqueo se ejecuta sin confirmación.
+- `rofi/.config/rofi/power.rasi` puede permanecer en el repositorio como archivo
+  heredado, pero el `power-menu` GTK no lo usa.
+- El `icon-theme` del lanzador Rofi sigue fijado a `WhiteSur-dark`; no se cambió
+  en esta fase. Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
 - `avatar-select`, `wallpaper-select` y `dock-settings` reutilizan `config.rasi`.
 - `settings-menu` y `waybar-settings` son paneles GTK3 y no usan Rofi.
-- En `power.rasi`, el elemento seleccionado solo cambia de color y borde de
-  acento; el tamaño se mantiene para evitar saltos de layout. Rofi no soporta
-  transiciones ni escalado de iconos; el aumento real solo se aplica a los
-  iconos del dock.
 
 Probar:
 
 ```bash
 rofi -show drun -config ~/dotfiles/rofi/.config/rofi/config.rasi
 ~/.local/bin/power-menu
-rofi -dump-theme -config ~/dotfiles/rofi/.config/rofi/power.rasi >/dev/null
 ```
 
 ## nwg-dock, Kitty y Hyprland
@@ -1464,8 +1461,8 @@ español y usa `⊞` para la tecla Super:
 - `scripts/.local/bin/wallpaper-carousel`: carrusel de fondos sobre
   `wallpaper_dir` (`start|stop|toggle|status|next|set-interval <min>`), con
   servicio systemd de usuario y actualización de `~/.cache/current-wallpaper`.
-- `scripts/.local/bin/power-menu`, `updates-count`, `hypr-test`,
-  `hyprland-glass`.
+- `scripts/.local/bin/power-menu` (panel GTK3 de energía), `updates-count`,
+  `hypr-test`, `hyprland-glass`.
 - `scripts/.local/bin/keybinds-viewer`: visor Rofi de atajos de Hyprland con
   descripciones en español y `⊞` para Super.
 - `scripts/system/optional-services`: desactiva o reactiva los servicios

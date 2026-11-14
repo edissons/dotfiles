@@ -301,3 +301,58 @@ tooltip {
 tooltip label {
     color: @text;
 }
+
+/* Power menu (GTK app) */
+.power-window {
+    border-radius: 16px;
+}
+
+.power-main {
+    padding: 18px;
+}
+
+.power-tile {
+    min-width: 108px;
+    min-height: 108px;
+    padding: 14px 10px;
+    border-radius: 14px;
+    border: 1px solid @border;
+    background-color: @surface;
+    background-image: none;
+    color: @text;
+}
+
+.power-tile:hover {
+    background-color: alpha(@accent, 0.08);
+    border-color: alpha(@accent, 0.35);
+}
+
+.power-tile:focus {
+    outline-style: solid;
+    outline-width: 2px;
+    outline-color: alpha(@accent, 0.55);
+    outline-offset: 2px;
+}
+
+.power-tile-label {
+    font-size: 13px;
+    color: @text;
+}
+
+.power-confirm-title {
+    font-size: 22px;
+    font-weight: 600;
+    color: @text;
+}
+
+.power-confirm-count {
+    font-size: 48px;
+    font-weight: 700;
+    color: @text;
+}
+
+.power-cancel {
+    min-height: 32px;
+    padding: 6px 18px;
+    border-radius: 10px;
+}

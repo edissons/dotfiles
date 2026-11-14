@@ -1,67 +1,297 @@
-#!/usr/bin/env bash
-CFG="$HOME/dotfiles/rofi/.config/rofi/power.rasi"
-KB=(-kb-move-char-back "Control+b" -kb-move-char-forward "Control+f"
-    -kb-row-left "Left,Control+Page_Up" -kb-row-right "Right,Control+Page_Down"
-    -kb-cancel "Escape,BackSpace,Control+g" -kb-remove-char-back "Control+h")
+#!/usr/bin/env python3
+import os
+import shutil
+import subprocess
+from pathlib import Path
 
-# --- Íconos propios, mismo estilo, color según el tema ---
-COLOR="#f5f5f7"
-[ "$(cat "$HOME/.config/theme/mode" 2>/dev/null)" = light ] && COLOR="#1d1d1f"
-IDIR="$HOME/.cache/power-menu-icons"
-mkdir -p "$IDIR"
+import gi
 
-svg() {
-  printf '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="%s" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">%s</svg>\n' \
-    "$COLOR" "$2" > "$IDIR/$1.svg"
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
+
+HOME = Path.home()
+ICON_DIR = HOME / ".cache" / "power-menu-icons"
+THEME_MODE = HOME / ".config" / "theme" / "mode"
+THEME_CSS = HOME / ".config" / "theme" / "current.css"
+SETTINGS_CSS = HOME / "dotfiles" / "waybar" / ".config" / "waybar" / "settings.css"
+
+ACTIONS = [
+    ("lock", "Bloquear", "lock"),
+    ("logout", "Cerrar sesión", "logout"),
+    ("suspend", "Suspender", "suspend"),
+    ("hibernate", "Hibernar", "hibernate"),
+    ("reboot", "Reiniciar", "reboot"),
+    ("poweroff", "Apagar", "poweroff"),
+]
+LABELS = {
+    "logout": "Cerrando sesión",
+    "suspend": "Suspendiendo",
+    "hibernate": "Hibernando",
+    "reboot": "Reiniciando",
+    "poweroff": "Apagando",
 }
-svg lock      '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'
-svg logout    '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>'
-svg suspend   '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'
-svg hibernate '<path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>'
-svg reboot    '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>'
-svg poweroff  '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>'
+SVG_PATHS = {
+    "lock": '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    "logout": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
+    "suspend": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "hibernate": '<path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
+    "reboot": '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
+    "poweroff": '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
+}
 
-mk() { printf '%s\0icon\x1f%s\n' "$1" "$IDIR/$2.svg"; }
 
-idx=$({ mk Bloquear lock
-        mk "Cerrar sesión" logout
-        mk Suspender suspend
-        mk Hibernar hibernate
-        mk Reiniciar reboot
-        mk Apagar poweroff; } \
-  | rofi -dmenu -no-custom -format i -show-icons \
-      -mesg "Elige una opción · tendrás 3 s para cancelar con Esc o Retroceso" \
-      -config "$CFG" "${KB[@]}") || exit 0
+def theme_color():
+    try:
+        if THEME_MODE.read_text(encoding="utf-8").strip() == "light":
+            return "#1d1d1f"
+    except OSError:
+        pass
+    return "#f5f5f7"
 
-names=(lock logout suspend hibernate reboot poweroff)
-labels=("Bloqueando" "Cerrando sesión" "Suspendiendo" "Hibernando" "Reiniciando" "Apagando")
-action=${names[$idx]}
 
-if [ "$action" != lock ]; then
-  printf 'Cancelar\n' | timeout 3 rofi -dmenu -no-custom -config "$CFG" "${KB[@]}" \
-    -mesg "${labels[$idx]} en 3 segundos…"$'\n'"Esc o Retroceso para cancelar" \
-    -theme-str 'window { width: 400px; } mainbox { padding: 18px; spacing: 12px; } listview { lines: 1; columns: 1; fixed-height: false; } element { padding: 8px 12px; border-radius: 12px; } element-icon { size: 0px; } element-text { horizontal-align: 0.5; } textbox { horizontal-align: 0.5; font: "SF Pro Text 13"; text-color: @text; }' \
-    >/dev/null
-  [ $? -eq 124 ] || exit 0
-fi
+def ensure_icons():
+    ICON_DIR.mkdir(parents=True, exist_ok=True)
+    color = theme_color()
+    for name, inner in SVG_PATHS.items():
+        svg = (
+            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
+            f'stroke="{color}" stroke-width="1.75" stroke-linecap="round" '
+            f'stroke-linejoin="round">{inner}</svg>\n'
+        )
+        try:
+            (ICON_DIR / f"{name}.svg").write_text(svg, encoding="utf-8")
+        except OSError:
+            pass
 
-case "$action" in
-  lock)      "$HOME/.local/bin/lock-screen" ;;
-  logout)    hyprctl dispatch 'hl.dsp.exit()' ;;
-  suspend)   systemctl suspend ;;
-  hibernate) systemctl hibernate ;;
-  reboot)
-    if command -v systemd-inhibit >/dev/null 2>&1; then
-      systemd-inhibit --what=handle-lid-switch:sleep --mode=block --why="Reiniciando" systemctl reboot
-    else
-      systemctl reboot
-    fi
-    ;;
-  poweroff)
-    if command -v systemd-inhibit >/dev/null 2>&1; then
-      systemd-inhibit --what=handle-lid-switch:sleep --mode=block --why="Apagando" systemctl poweroff
-    else
-      systemctl poweroff
-    fi
-    ;;
-esac
+
+def load_css():
+    provider = Gtk.CssProvider()
+    loaded = False
+    for path in (THEME_CSS, SETTINGS_CSS):
+        if path.exists():
+            try:
+                provider.load_from_path(str(path))
+                loaded = True
+            except Exception:
+                pass
+    extra = Gtk.CssProvider()
+    extra.load_from_data(
+        b"""
+        .power-window { border-radius: 16px; }
+        .power-main { padding: 18px; }
+        .power-tile {
+            min-width: 108px; min-height: 108px; padding: 14px 10px;
+            border-radius: 14px; border: 1px solid @border;
+            background-color: @surface; background-image: none;
+        }
+        .power-tile:hover { background-color: alpha(@accent, 0.08); border-color: alpha(@accent, 0.35); }
+        .power-tile:focus { outline: 2px solid alpha(@accent, 0.55); outline-offset: 2px; }
+        .power-tile-label { font-size: 13px; }
+        .power-confirm-title { font-size: 22px; font-weight: 600; }
+        .power-confirm-count { font-size: 48px; font-weight: 700; }
+        .power-cancel { min-height: 32px; padding: 6px 18px; border-radius: 10px; }
+        """
+    )
+    screen = Gdk.Screen.get_default()
+    if screen and loaded:
+        Gtk.StyleContext.add_provider_for_screen(screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+    if screen:
+        Gtk.StyleContext.add_provider_for_screen(screen, extra, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+
+
+def spawn(cmd):
+    subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+class PowerMenu(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Power Menu")
+        self.get_style_context().add_class("power-window")
+        self.get_style_context().add_class("settings-window")
+        self.set_default_size(780, -1)
+        self.set_resizable(False)
+        self.set_border_width(0)
+        self.set_position(Gtk.WindowPosition.CENTER)
+        self.set_keep_above(True)
+
+        self.countdown_id = None
+        self.pending_action = None
+        self.remaining = 0
+        self.buttons = []
+
+        self.stack = Gtk.Stack()
+        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self.stack.set_transition_duration(120)
+
+        self.menu_box = self._build_menu()
+        self.confirm_box = self._build_confirm()
+        self.stack.add_named(self.menu_box, "menu")
+        self.stack.add_named(self.confirm_box, "confirm")
+
+        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        outer.get_style_context().add_class("power-main")
+        outer.pack_start(self.stack, True, True, 0)
+        self.add(outer)
+
+        self.connect("destroy", Gtk.main_quit)
+        self.connect("key-press-event", self.on_key)
+        self.show_all()
+        self.stack.set_visible_child_name("menu")
+        if self.buttons:
+            self.buttons[0].grab_focus()
+
+    def _build_menu(self):
+        grid = Gtk.Grid()
+        grid.set_column_spacing(12)
+        grid.set_row_spacing(12)
+        grid.set_halign(Gtk.Align.CENTER)
+        grid.set_valign(Gtk.Align.CENTER)
+        for i, (action, text, icon_name) in enumerate(ACTIONS):
+            btn = Gtk.Button()
+            btn.get_style_context().add_class("power-tile")
+            btn.set_relief(Gtk.ReliefStyle.NONE)
+            btn.set_can_focus(True)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+            box.set_halign(Gtk.Align.CENTER)
+            box.set_valign(Gtk.Align.CENTER)
+            img = self._icon(icon_name)
+            lbl = Gtk.Label(label=text)
+            lbl.get_style_context().add_class("power-tile-label")
+            box.pack_start(img, False, False, 0)
+            box.pack_start(lbl, False, False, 0)
+            btn.add(box)
+            btn.connect("clicked", lambda _b, a=action: self.activate_action(a))
+            grid.attach(btn, i, 0, 1, 1)
+            self.buttons.append(btn)
+        return grid
+
+    def _build_confirm(self):
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        box.set_halign(Gtk.Align.CENTER)
+        box.set_valign(Gtk.Align.CENTER)
+        self.confirm_title = Gtk.Label()
+        self.confirm_title.get_style_context().add_class("power-confirm-title")
+        self.confirm_count = Gtk.Label()
+        self.confirm_count.get_style_context().add_class("power-confirm-count")
+        self.cancel_btn = Gtk.Button(label="Cancelar")
+        self.cancel_btn.get_style_context().add_class("action-button")
+        self.cancel_btn.get_style_context().add_class("power-cancel")
+        self.cancel_btn.connect("clicked", lambda *_: self.cancel_confirm())
+        box.pack_start(self.confirm_title, False, False, 0)
+        box.pack_start(self.confirm_count, False, False, 4)
+        box.pack_start(self.cancel_btn, False, False, 0)
+        return box
+
+    def _icon(self, name):
+        path = ICON_DIR / f"{name}.svg"
+        if path.exists():
+            try:
+                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), 44, 44, True)
+                return Gtk.Image.new_from_pixbuf(pixbuf)
+            except Exception:
+                try:
+                    return Gtk.Image.new_from_file(str(path))
+                except Exception:
+                    pass
+        return Gtk.Image.new_from_icon_name("image-missing", Gtk.IconSize.DIALOG)
+
+    def activate_action(self, action):
+        if action == "lock":
+            spawn([str(HOME / ".local" / "bin" / "lock-screen")])
+            Gtk.main_quit()
+            return
+        self.pending_action = action
+        self.remaining = 3
+        self.confirm_title.set_text(f"{LABELS[action]} en 3 segundos…")
+        self.update_countdown_label()
+        self.stack.set_visible_child_name("confirm")
+        self.cancel_btn.grab_focus()
+        self.clear_timeout()
+        self.countdown_id = GLib.timeout_add_seconds(1, self.on_tick)
+
+    def update_countdown_label(self):
+        self.confirm_count.set_text(str(self.remaining))
+
+    def on_tick(self):
+        self.remaining -= 1
+        if self.remaining <= 0:
+            self.countdown_id = None
+            action = self.pending_action
+            self.execute_action(action)
+            Gtk.main_quit()
+            return False
+        self.update_countdown_label()
+        return True
+
+    def clear_timeout(self):
+        if self.countdown_id is not None:
+            GLib.source_remove(self.countdown_id)
+            self.countdown_id = None
+
+    def cancel_confirm(self):
+        self.clear_timeout()
+        self.pending_action = None
+        self.stack.set_visible_child_name("menu")
+        if self.buttons:
+            self.buttons[0].grab_focus()
+
+    def execute_action(self, action):
+        if action == "logout":
+            spawn(["hyprctl", "dispatch", "hl.dsp.exit()"])
+        elif action == "suspend":
+            spawn(["systemctl", "suspend"])
+        elif action == "hibernate":
+            spawn(["systemctl", "hibernate"])
+        elif action == "reboot":
+            if shutil.which("systemd-inhibit"):
+                spawn(["systemd-inhibit", "--what=handle-lid-switch:sleep", "--mode=block", "--why=Reiniciando", "systemctl", "reboot"])
+            else:
+                spawn(["systemctl", "reboot"])
+        elif action == "poweroff":
+            if shutil.which("systemd-inhibit"):
+                spawn(["systemd-inhibit", "--what=handle-lid-switch:sleep", "--mode=block", "--why=Apagando", "systemctl", "poweroff"])
+            else:
+                spawn(["systemctl", "poweroff"])
+
+    def on_key(self, _widget, event):
+        key = Gdk.keyval_name(event.keyval)
+        visible = self.stack.get_visible_child_name()
+        if visible == "confirm":
+            if key in ("Escape", "BackSpace"):
+                self.cancel_confirm()
+                return True
+            return False
+        if key == "Escape":
+            Gtk.main_quit()
+            return True
+        if key in ("Left", "Right", "Tab", "ISO_Left_Tab"):
+            focused = self.get_focus()
+            if focused in self.buttons:
+                idx = self.buttons.index(focused)
+            else:
+                idx = 0
+            if key in ("Left", "ISO_Left_Tab"):
+                idx = (idx - 1) % len(self.buttons)
+            elif key in ("Right", "Tab"):
+                idx = (idx + 1) % len(self.buttons)
+            self.buttons[idx].grab_focus()
+            return True
+        if key in ("Return", "KP_Enter", "space"):
+            focused = self.get_focus()
+            if focused in self.buttons:
+                focused.clicked()
+                return True
+        return False
+
+
+def main():
+    ensure_icons()
+    load_css()
+    PowerMenu()
+    Gtk.main()
+
+
+if __name__ == "__main__":
+    main()
