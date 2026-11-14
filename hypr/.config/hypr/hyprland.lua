@@ -132,6 +132,16 @@ hl.layer_rule({
     ignore_alpha = 0.3,
 })
 
+-- --- Blur del menú de energía (layer-shell, namespace: powermenu) ---
+
+hl.layer_rule({
+    match = {
+        namespace = "^powermenu$",
+    },
+    blur = true,
+    ignore_alpha = 0,
+})
+
 -- --- Atajos básicos ---
 
 hl.bind(mod .. " + " .. "Return", hl.dsp.exec_cmd("kitty"))

@@ -1262,19 +1262,29 @@ swaync-client -rs
 ## Rofi
 
 Archivo activo para los menús Rofi: `rofi/.config/rofi/config.rasi`. El
-`power-menu` ya no usa Rofi ni `power.rasi`: es un panel GTK3
-(`scripts/.local/bin/power-menu`, Python/GTK3, estilo Glasshouse) que carga los
-tokens de `~/.config/theme/current.css` y `waybar/.config/waybar/settings.css`.
+`power-menu` ya no usa Rofi ni `power.rasi`: es un panel GTK3 + `gtk-layer-shell`
+(`scripts/.local/bin/power-menu`, Python/GTK3) estilo *liquid glass* (inspirado
+en iOS) que se muestra como overlay a pantalla completa.
 
 - Lanzador: `font: "SF Pro Text 13"` (`config.rasi`).
-- Menú de energía (`power-menu`): fila de 6 acciones con iconos SVG recoloreados
-  según el tema (cacheados en `~/.cache/power-menu-icons`), confirmación con
-  cuenta atrás de 3 s dentro de la propia ventana y botón «Cancelar».
-  `Esc`/`BackSpace`/«Cancelar» abortan la confirmación; `Esc` cierra el menú
-  principal. Mantiene los mismos comandos e inhibición de idle/suspensión al
-  reiniciar o apagar. El bloqueo se ejecuta sin confirmación.
+- Menú de energía (`power-menu`): overlay en la capa `overlay` de Wayland con
+  namespace `powermenu` (Hyprland aplica el desenfoque vía `layerrule`), fondo
+  oscurecido/translúcido, título y subtítulo centrados, pila vertical de 6
+  píldoras de vidrio (Bloquear, Cerrar sesión, Suspender, Hibernar, Reiniciar,
+  Apagar) con insignia de icono y etiqueta, y botón circular **X** con
+  «Cancelar». Los textos se localizan según el idioma del sistema
+  (`LC_MESSAGES/LANG`, p. ej. español/portugués/inglés).
+- **Hibernar** se muestra solo si hay soporte básico disponible (`disk` en
+  `/sys/power/state` y swap activa en `swapon --show`); aun así, la reanudación
+  depende de tener `resume=` configurado correctamente.
+- Comportamiento: `Esc`, clic en **X** o clic fuera de las píldoras cierra sin
+  ejecutar; `↑/↓` y `Tab` navegan, `Enter` confirma, `1`–`6` son atajos. Las
+  acciones destructivas (Cerrar sesión, Reiniciar, Apagar) se ejecutan
+  inmediatamente al confirmar (sin pantalla extra). La ventana se cierra antes
+  de ejecutar el comando y no bloquea la UI. Instancia única/toggle: volver a
+  lanzarlo mientras está abierto lo cierra.
 - `rofi/.config/rofi/power.rasi` puede permanecer en el repositorio como archivo
-  heredado, pero el `power-menu` GTK no lo usa.
+  heredado, pero el `power-menu` no lo usa.
 - El `icon-theme` del lanzador Rofi sigue fijado a `WhiteSur-dark`; no se cambió
   en esta fase. Es una inconsistencia conocida con `theme-toggle`, que usa
   `WhiteSur-glass`/`WhiteSur-glass-light`.
@@ -1461,7 +1471,7 @@ español y usa `⊞` para la tecla Super:
 - `scripts/.local/bin/wallpaper-carousel`: carrusel de fondos sobre
   `wallpaper_dir` (`start|stop|toggle|status|next|set-interval <min>`), con
   servicio systemd de usuario y actualización de `~/.cache/current-wallpaper`.
-- `scripts/.local/bin/power-menu` (panel GTK3 de energía), `updates-count`,
+- `scripts/.local/bin/power-menu` (menú de energía GTK3 + gtk-layer-shell, overlay *liquid glass*), `updates-count`,
   `hypr-test`, `hyprland-glass`.
 - `scripts/.local/bin/keybinds-viewer`: visor Rofi de atajos de Hyprland con
   descripciones en español y `⊞` para Super.

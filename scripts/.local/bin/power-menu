@@ -1,296 +1,515 @@
 #!/usr/bin/env python3
+"""
+Glasshouse power menu (Wayland/Hyprland, gtk-layer-shell).
+Full-screen "liquid glass" overlay inspired by the iOS power-off screen.
+
+DRY-RUN MODE (default): actions are printed with echo instead of executed.
+Set DRY_RUN = False (see "Customization" below) after verifying the menu.
+"""
+
+# -----------------------------------------------------------------------------
+# Customization (edit these values to tune look and behavior)
+# -----------------------------------------------------------------------------
+DRY_RUN = False  # True = print commands with `echo` (safe). False = run them.
+
+# Glass / overlay
+OVERLAY_TINT_RGBA = "rgba(0, 0, 0, 0.45)"   # darken desktop behind menu (~40-50%)
+PILL_BG_RGBA = "rgba(255, 255, 255, 0.13)"   # translucent pill fill
+PILL_BG_HOVER_RGBA = "rgba(255, 255, 255, 0.22)"
+PILL_BORDER_RGBA = "rgba(255, 255, 255, 0.15)"
+PILL_HIGHLIGHT_RGBA = "rgba(255, 255, 255, 0.10)"  # top edge highlight
+PILL_WIDTH = 360
+PILL_HEIGHT = 68
+PILL_RADIUS = 34
+PILL_GAP = 15
+BADGE_SIZE = 44
+
+# Accents (icon badge)
+ACCENT_SHUTDOWN = "#ff6b4a"  # red/orange
+ACCENT_REBOOT = "#4da3ff"    # blue
+ACCENT_NEUTRAL = "rgba(255,255,255,0.18)"
+
+# Text / fonts
+TITLE_SIZE_PX = 28
+SUBTITLE_SIZE_PX = 14
+LABEL_SIZE_PX = 16
+CANCEL_LABEL_SIZE_PX = 13
+FONT_FAMILY = "Inter, 'SF Pro Display', 'SF Pro Text', sans-serif"
+
+# Animation (milliseconds)
+FADE_MS = 180
+SLIDE_PX = 18
+HOVER_TRANSITION_MS = 140
+
+# Close/toggle
+LAYER_NAMESPACE = "powermenu"  # used by Hyprland layerrules
+# -----------------------------------------------------------------------------
+
+import locale
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import gi
 
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-gi.require_version("GdkPixbuf", "2.0")
-from gi.repository import Gdk, GdkPixbuf, GLib, Gtk
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
 
 HOME = Path.home()
-ICON_DIR = HOME / ".cache" / "power-menu-icons"
-THEME_MODE = HOME / ".config" / "theme" / "mode"
-THEME_CSS = HOME / ".config" / "theme" / "current.css"
-SETTINGS_CSS = HOME / "dotfiles" / "waybar" / ".config" / "waybar" / "settings.css"
-
-ACTIONS = [
-    ("lock", "Bloquear", "lock"),
-    ("logout", "Cerrar sesión", "logout"),
-    ("suspend", "Suspender", "suspend"),
-    ("hibernate", "Hibernar", "hibernate"),
-    ("reboot", "Reiniciar", "reboot"),
-    ("poweroff", "Apagar", "poweroff"),
-]
-LABELS = {
-    "logout": "Cerrando sesión",
-    "suspend": "Suspendiendo",
-    "hibernate": "Hibernando",
-    "reboot": "Reiniciando",
-    "poweroff": "Apagando",
-}
-SVG_PATHS = {
-    "lock": '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
-    "logout": '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>',
-    "suspend": '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-    "hibernate": '<path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/>',
-    "reboot": '<path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/>',
-    "poweroff": '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.77.04"/>',
-}
 
 
-def theme_color():
-    try:
-        if THEME_MODE.read_text(encoding="utf-8").strip() == "light":
-            return "#1d1d1f"
-    except OSError:
-        pass
-    return "#f5f5f7"
-
-
-def ensure_icons():
-    ICON_DIR.mkdir(parents=True, exist_ok=True)
-    color = theme_color()
-    for name, inner in SVG_PATHS.items():
-        svg = (
-            f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" '
-            f'stroke="{color}" stroke-width="1.75" stroke-linecap="round" '
-            f'stroke-linejoin="round">{inner}</svg>\n'
-        )
-        try:
-            (ICON_DIR / f"{name}.svg").write_text(svg, encoding="utf-8")
-        except OSError:
-            pass
-
-
-def load_css():
-    provider = Gtk.CssProvider()
-    loaded = False
-    for path in (THEME_CSS, SETTINGS_CSS):
-        if path.exists():
-            try:
-                provider.load_from_path(str(path))
-                loaded = True
-            except Exception:
-                pass
-    extra = Gtk.CssProvider()
-    extra.load_from_data(
-        b"""
-        .power-window { border-radius: 16px; }
-        .power-main { padding: 18px; }
-        .power-tile {
-            min-width: 108px; min-height: 108px; padding: 14px 10px;
-            border-radius: 14px; border: 1px solid @border;
-            background-color: @surface; background-image: none;
-        }
-        .power-tile:hover { background-color: alpha(@accent, 0.08); border-color: alpha(@accent, 0.35); }
-        .power-tile:focus { outline: 2px solid alpha(@accent, 0.55); outline-offset: 2px; }
-        .power-tile-label { font-size: 13px; }
-        .power-confirm-title { font-size: 22px; font-weight: 600; }
-        .power-confirm-count { font-size: 48px; font-weight: 700; }
-        .power-cancel { min-height: 32px; padding: 6px 18px; border-radius: 10px; }
-        """
+# -----------------------------------------------------------------------------
+# Localization: choose strings from system locale (LC_MESSAGES/LANG)
+# -----------------------------------------------------------------------------
+def detect_lang() -> str:
+    lang = (
+        os.environ.get("LC_ALL")
+        or os.environ.get("LC_MESSAGES")
+        or os.environ.get("LANG")
+        or ""
     )
+    try:
+        loc = locale.getlocale()[0] or locale.getdefaultlocale()[0] or ""
+    except Exception:
+        loc = ""
+    code = (lang or loc or "").lower()
+    if code.startswith("es"):
+        return "es"
+    if code.startswith("pt"):
+        return "pt"
+    return "en"
+
+
+STRINGS = {
+    "en": {
+        "title": "Power Menu",
+        "subtitle": "Choose an action",
+        "lock": "Lock",
+        "logout": "Logout",
+        "sleep": "Sleep",
+        "hibernate": "Hibernate",
+        "reboot": "Reboot",
+        "shutdown": "Shutdown",
+        "cancel": "Cancel",
+    },
+    "es": {
+        "title": "Menú de energía",
+        "subtitle": "Elige una acción",
+        "lock": "Bloquear",
+        "logout": "Cerrar sesión",
+        "sleep": "Suspender",
+        "hibernate": "Hibernar",
+        "reboot": "Reiniciar",
+        "shutdown": "Apagar",
+        "cancel": "Cancelar",
+    },
+    "pt": {
+        "title": "Menu de energia",
+        "subtitle": "Escolha uma ação",
+        "lock": "Bloquear",
+        "logout": "Sair",
+        "sleep": "Suspender",
+        "hibernate": "Hibernar",
+        "reboot": "Reiniciar",
+        "shutdown": "Desligar",
+        "cancel": "Cancelar",
+    },
+}
+L = STRINGS[detect_lang()]
+
+
+# -----------------------------------------------------------------------------
+# Hibernate availability check
+# Hibernation needs kernel support ("disk" in /sys/power/state) and swap
+# (swapon --show). Some setups (e.g. zram-only, missing resume=) still cannot
+# resume; this check hides the option when basic prerequisites are missing.
+# -----------------------------------------------------------------------------
+def hibernate_available() -> bool:
+    try:
+        states = Path("/sys/power/state").read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return False
+    if "disk" not in states.split():
+        return False
+    try:
+        out = subprocess.check_output(["swapon", "--show", "--noheadings"], text=True)
+    except Exception:
+        return False
+    return bool(out.strip())
+
+
+# -----------------------------------------------------------------------------
+# Actions: each entry is (id, icon, label, command_argv, accent, destructive)
+# destructive = True for Shutdown/Reboot/Logout (run immediately on confirm).
+# Commands are argv lists; DRY_RUN prints them via `echo` instead of running.
+# -----------------------------------------------------------------------------
+def build_actions():
+    actions = [
+        ("lock", "", L["lock"], ["loginctl", "lock-session"], ACCENT_NEUTRAL, False),
+        ("logout", "󰍃", L["logout"], ["hyprctl", "dispatch", "exit"], ACCENT_NEUTRAL, True),
+        ("sleep", "󰤄", L["sleep"], ["systemctl", "suspend"], ACCENT_NEUTRAL, False),
+    ]
+    if hibernate_available():
+        actions.append(
+            ("hibernate", "󰒲", L["hibernate"], ["systemctl", "hibernate"], ACCENT_NEUTRAL, False)
+        )
+    actions.extend(
+        [
+            ("reboot", "󰜉", L["reboot"], ["systemctl", "reboot"], ACCENT_REBOOT, True),
+            ("shutdown", "⏻", L["shutdown"], ["systemctl", "poweroff"], ACCENT_SHUTDOWN, True),
+        ]
+    )
+    return actions
+
+
+def run_action(argv):
+    """Run (or echo) a command without blocking the UI."""
+    try:
+        if DRY_RUN:
+            # Dry run: show the command so you can verify without powering off.
+            cmd_str = " ".join(argv)
+            print(f"[dry-run] echo {cmd_str}", flush=True)
+            subprocess.Popen(["echo", cmd_str], start_new_session=True)
+        else:
+            subprocess.Popen(argv, start_new_session=True)
+    except Exception as e:
+        print(f"power-menu: failed to run {argv}: {e}", file=sys.stderr)
+
+
+# -----------------------------------------------------------------------------
+# CSS: "liquid glass" styling. Hyprland provides the blur via layerrule;
+# this stylesheet provides tint, translucency, borders, highlights and motion.
+# -----------------------------------------------------------------------------
+def load_css():
+    css = f"""
+    * {{
+        font-family: {FONT_FAMILY};
+    }}
+    window, .pm-window {{
+        background-color: {OVERLAY_TINT_RGBA};
+    }}
+    .pm-title {{
+        color: #ffffff;
+        font-size: {TITLE_SIZE_PX}px;
+        font-weight: 600;
+    }}
+    .pm-subtitle {{
+        color: rgba(255,255,255,0.55);
+        font-size: {SUBTITLE_SIZE_PX}px;
+        font-weight: 400;
+    }}
+    .pm-pill {{
+        background-color: {PILL_BG_RGBA};
+        background-image: linear-gradient(to bottom, {PILL_HIGHLIGHT_RGBA}, rgba(255,255,255,0));
+        border: 1px solid {PILL_BORDER_RGBA};
+        border-radius: {PILL_RADIUS}px;
+        min-width: {PILL_WIDTH}px;
+        min-height: {PILL_HEIGHT}px;
+        padding: 0 18px;
+        transition: all {HOVER_TRANSITION_MS}ms ease;
+    }}
+    .pm-pill:hover, .pm-pill:focus {{
+        background-color: {PILL_BG_HOVER_RGBA};
+        /* slight "scale-up" feel via brighter bg; true transform is limited in GTK3 */
+        border-color: rgba(255,255,255,0.28);
+        outline: none;
+    }}
+    .pm-badge {{
+        min-width: {BADGE_SIZE}px;
+        min-height: {BADGE_SIZE}px;
+        border-radius: {BADGE_SIZE // 2}px;
+        color: #ffffff;
+        font-size: 18px;
+    }}
+    .pm-label {{
+        color: #ffffff;
+        font-size: {LABEL_SIZE_PX}px;
+        font-weight: 500;
+    }}
+    .pm-x {{
+        background-color: {PILL_BG_RGBA};
+        border: 1px solid {PILL_BORDER_RGBA};
+        border-radius: 28px;
+        min-width: 56px;
+        min-height: 56px;
+        color: #ffffff;
+        font-size: 22px;
+        transition: all {HOVER_TRANSITION_MS}ms ease;
+    }}
+    .pm-x:hover, .pm-x:focus {{
+        background-color: {PILL_BG_HOVER_RGBA};
+        outline: none;
+    }}
+    .pm-cancel {{
+        color: rgba(255,255,255,0.65);
+        font-size: {CANCEL_LABEL_SIZE_PX}px;
+    }}
+    button {{
+        box-shadow: none;
+    }}
+    """
+    provider = Gtk.CssProvider()
+    provider.load_from_data(css.encode("utf-8"))
     screen = Gdk.Screen.get_default()
-    if screen and loaded:
-        Gtk.StyleContext.add_provider_for_screen(screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
     if screen:
-        Gtk.StyleContext.add_provider_for_screen(screen, extra, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION + 1)
+        Gtk.StyleContext.add_provider_for_screen(
+            screen, provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
 
 
-def spawn(cmd):
-    subprocess.Popen(cmd, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+class PowerMenuWindow(Gtk.Window):
+    """Full-screen layer-shell overlay window."""
 
+    def __init__(self, app):
+        super().__init__(application=app)
+        self.app = app
+        self.actions = build_actions()
+        self.pill_buttons = []
+        self.focus_index = 0
+        self.closing = False
 
-class PowerMenu(Gtk.Window):
-    def __init__(self):
-        super().__init__(title="Power Menu")
-        self.get_style_context().add_class("power-window")
-        self.get_style_context().add_class("settings-window")
-        self.set_default_size(780, -1)
-        self.set_resizable(False)
-        self.set_border_width(0)
-        self.set_position(Gtk.WindowPosition.CENTER)
-        self.set_keep_above(True)
+        # --- Layer-shell: full-screen overlay with keyboard focus, namespace for blur ---
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_namespace(self, LAYER_NAMESPACE)
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.EXCLUSIVE)
+        GtkLayerShell.set_exclusive_zone(self, -1)
+        for edge in (
+            GtkLayerShell.Edge.TOP,
+            GtkLayerShell.Edge.BOTTOM,
+            GtkLayerShell.Edge.LEFT,
+            GtkLayerShell.Edge.RIGHT,
+        ):
+            GtkLayerShell.set_anchor(self, edge, True)
 
-        self.countdown_id = None
-        self.pending_action = None
-        self.remaining = 0
-        self.buttons = []
+        self.set_decorated(False)
+        self.set_app_paintable(True)
+        self.get_style_context().add_class("pm-window")
 
-        self.stack = Gtk.Stack()
-        self.stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
-        self.stack.set_transition_duration(120)
+        # Root event box: clicking the background (outside pills) cancels/closes.
+        self.root = Gtk.EventBox()
+        self.root.set_visible_window(False)
+        self.root.set_above_child(False)
+        self.root.connect("button-press-event", self.on_background_click)
+        self.add(self.root)
 
-        self.menu_box = self._build_menu()
-        self.confirm_box = self._build_confirm()
-        self.stack.add_named(self.menu_box, "menu")
-        self.stack.add_named(self.confirm_box, "confirm")
+        # Centered content column
+        self.outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.outer.set_halign(Gtk.Align.CENTER)
+        self.outer.set_valign(Gtk.Align.CENTER)
+        self.root.add(self.outer)
 
-        outer = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        outer.get_style_context().add_class("power-main")
-        outer.pack_start(self.stack, True, True, 0)
-        self.add(outer)
+        # Title + subtitle
+        title = Gtk.Label(label=L["title"])
+        title.get_style_context().add_class("pm-title")
+        subtitle = Gtk.Label(label=L["subtitle"])
+        subtitle.get_style_context().add_class("pm-subtitle")
+        subtitle.set_margin_bottom(28)
+        self.outer.pack_start(title, False, False, 4)
+        self.outer.pack_start(subtitle, False, False, 0)
 
-        self.connect("destroy", Gtk.main_quit)
+        # Vertical stack of pill buttons
+        self.stack = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=PILL_GAP)
+        self.stack.set_halign(Gtk.Align.CENTER)
+        self.outer.pack_start(self.stack, False, False, 0)
+
+        for idx, (aid, icon, label, argv, accent, destructive) in enumerate(self.actions):
+            btn = self.make_pill(idx, icon, label, accent)
+            btn.connect("clicked", self.on_pill_clicked, idx)
+            self.stack.pack_start(btn, False, False, 0)
+            self.pill_buttons.append(btn)
+
+        # Circular X cancel button + label
+        x_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        x_box.set_halign(Gtk.Align.CENTER)
+        x_box.set_margin_top(28)
+        self.x_btn = Gtk.Button(label="✕")
+        self.x_btn.get_style_context().add_class("pm-x")
+        self.x_btn.set_relief(Gtk.ReliefStyle.NONE)
+        self.x_btn.set_size_request(56, 56)
+        self.x_btn.connect("clicked", lambda *_: self.close_menu(run_cmd=None))
+        x_box.pack_start(self.x_btn, False, False, 0)
+        cancel_lbl = Gtk.Label(label=L["cancel"])
+        cancel_lbl.get_style_context().add_class("pm-cancel")
+        x_box.pack_start(cancel_lbl, False, False, 0)
+        self.outer.pack_start(x_box, False, False, 0)
+
+        # Keyboard handling: Esc cancels, arrows/tab move, Enter activates, 1-6 shortcuts
         self.connect("key-press-event", self.on_key)
+
+        # Open animation: fade in + slight slide up
+        self.set_opacity(0.0)
+        self.outer.set_margin_top(SLIDE_PX)
         self.show_all()
-        self.stack.set_visible_child_name("menu")
-        if self.buttons:
-            self.buttons[0].grab_focus()
+        if self.pill_buttons:
+            self.pill_buttons[0].grab_focus()
+        self.animate_open()
 
-    def _build_menu(self):
-        grid = Gtk.Grid()
-        grid.set_column_spacing(12)
-        grid.set_row_spacing(12)
-        grid.set_halign(Gtk.Align.CENTER)
-        grid.set_valign(Gtk.Align.CENTER)
-        for i, (action, text, icon_name) in enumerate(ACTIONS):
-            btn = Gtk.Button()
-            btn.get_style_context().add_class("power-tile")
-            btn.set_relief(Gtk.ReliefStyle.NONE)
-            btn.set_can_focus(True)
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-            box.set_halign(Gtk.Align.CENTER)
-            box.set_valign(Gtk.Align.CENTER)
-            img = self._icon(icon_name)
-            lbl = Gtk.Label(label=text)
-            lbl.get_style_context().add_class("power-tile-label")
-            box.pack_start(img, False, False, 0)
-            box.pack_start(lbl, False, False, 0)
-            btn.add(box)
-            btn.connect("clicked", lambda _b, a=action: self.activate_action(a))
-            grid.attach(btn, i, 0, 1, 1)
-            self.buttons.append(btn)
-        return grid
+    # --- Pill construction (badge + label) ---
+    def make_pill(self, idx, icon, text, accent):
+        btn = Gtk.Button()
+        btn.get_style_context().add_class("pm-pill")
+        btn.set_relief(Gtk.ReliefStyle.NONE)
+        btn.set_can_focus(True)
 
-    def _build_confirm(self):
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        box.set_halign(Gtk.Align.CENTER)
-        box.set_valign(Gtk.Align.CENTER)
-        self.confirm_title = Gtk.Label()
-        self.confirm_title.get_style_context().add_class("power-confirm-title")
-        self.confirm_count = Gtk.Label()
-        self.confirm_count.get_style_context().add_class("power-confirm-count")
-        self.cancel_btn = Gtk.Button(label="Cancelar")
-        self.cancel_btn.get_style_context().add_class("action-button")
-        self.cancel_btn.get_style_context().add_class("power-cancel")
-        self.cancel_btn.connect("clicked", lambda *_: self.cancel_confirm())
-        box.pack_start(self.confirm_title, False, False, 0)
-        box.pack_start(self.confirm_count, False, False, 4)
-        box.pack_start(self.cancel_btn, False, False, 0)
-        return box
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=14)
+        row.set_halign(Gtk.Align.START)
+        row.set_valign(Gtk.Align.CENTER)
 
-    def _icon(self, name):
-        path = ICON_DIR / f"{name}.svg"
-        if path.exists():
-            try:
-                pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), 44, 44, True)
-                return Gtk.Image.new_from_pixbuf(pixbuf)
-            except Exception:
-                try:
-                    return Gtk.Image.new_from_file(str(path))
-                except Exception:
-                    pass
-        return Gtk.Image.new_from_icon_name("image-missing", Gtk.IconSize.DIALOG)
+        badge = Gtk.Label(label=icon)
+        badge.get_style_context().add_class("pm-badge")
+        badge.set_size_request(BADGE_SIZE, BADGE_SIZE)
+        badge.set_halign(Gtk.Align.CENTER)
+        badge.set_valign(Gtk.Align.CENTER)
+        # Per-badge accent color via inline CSS provider
+        bprov = Gtk.CssProvider()
+        bprov.load_from_data(f"* {{ background-color: {accent}; }}".encode("utf-8"))
+        badge.get_style_context().add_provider(bprov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-    def activate_action(self, action):
-        if action == "lock":
-            spawn([str(HOME / ".local" / "bin" / "lock-screen")])
-            Gtk.main_quit()
-            return
-        self.pending_action = action
-        self.remaining = 3
-        self.confirm_title.set_text(f"{LABELS[action]} en 3 segundos…")
-        self.update_countdown_label()
-        self.stack.set_visible_child_name("confirm")
-        self.cancel_btn.grab_focus()
-        self.clear_timeout()
-        self.countdown_id = GLib.timeout_add_seconds(1, self.on_tick)
+        lbl = Gtk.Label(label=text)
+        lbl.get_style_context().add_class("pm-label")
+        lbl.set_halign(Gtk.Align.START)
 
-    def update_countdown_label(self):
-        self.confirm_count.set_text(str(self.remaining))
+        row.pack_start(badge, False, False, 0)
+        row.pack_start(lbl, False, False, 0)
+        btn.add(row)
+        return btn
 
-    def on_tick(self):
-        self.remaining -= 1
-        if self.remaining <= 0:
-            self.countdown_id = None
-            action = self.pending_action
-            self.execute_action(action)
-            Gtk.main_quit()
-            return False
-        self.update_countdown_label()
+    # --- Background click: cancel if click is outside interactive controls ---
+    def on_background_click(self, widget, event):
+        # If click target is not inside a pill or the X button, close.
+        child = self.get_child_at_pos(int(event.x), int(event.y)) if hasattr(self, "get_child_at_pos") else None
+        # Simpler: walk allocation of stack/x_box; if outside, close.
+        x, y = event.x, event.y
+        for w in self.pill_buttons + [self.x_btn]:
+            ok, wx, wy = w.translate_coordinates(self, 0, 0)
+            if not ok:
+                continue
+            alloc = w.get_allocation()
+            if wx <= x <= wx + alloc.width and wy <= y <= wy + alloc.height:
+                return False
+        self.close_menu(run_cmd=None)
         return True
 
-    def clear_timeout(self):
-        if self.countdown_id is not None:
-            GLib.source_remove(self.countdown_id)
-            self.countdown_id = None
-
-    def cancel_confirm(self):
-        self.clear_timeout()
-        self.pending_action = None
-        self.stack.set_visible_child_name("menu")
-        if self.buttons:
-            self.buttons[0].grab_focus()
-
-    def execute_action(self, action):
-        if action == "logout":
-            spawn(["hyprctl", "dispatch", "hl.dsp.exit()"])
-        elif action == "suspend":
-            spawn(["systemctl", "suspend"])
-        elif action == "hibernate":
-            spawn(["systemctl", "hibernate"])
-        elif action == "reboot":
-            if shutil.which("systemd-inhibit"):
-                spawn(["systemd-inhibit", "--what=handle-lid-switch:sleep", "--mode=block", "--why=Reiniciando", "systemctl", "reboot"])
-            else:
-                spawn(["systemctl", "reboot"])
-        elif action == "poweroff":
-            if shutil.which("systemd-inhibit"):
-                spawn(["systemd-inhibit", "--what=handle-lid-switch:sleep", "--mode=block", "--why=Apagando", "systemctl", "poweroff"])
-            else:
-                spawn(["systemctl", "poweroff"])
-
-    def on_key(self, _widget, event):
+    # --- Input handling ---
+    def on_key(self, widget, event):
         key = Gdk.keyval_name(event.keyval)
-        visible = self.stack.get_visible_child_name()
-        if visible == "confirm":
-            if key in ("Escape", "BackSpace"):
-                self.cancel_confirm()
-                return True
-            return False
-        if key == "Escape":
-            Gtk.main_quit()
+        if key in ("Escape",):
+            self.close_menu(run_cmd=None)
             return True
-        if key in ("Left", "Right", "Tab", "ISO_Left_Tab"):
-            focused = self.get_focus()
-            if focused in self.buttons:
-                idx = self.buttons.index(focused)
-            else:
-                idx = 0
-            if key in ("Left", "ISO_Left_Tab"):
-                idx = (idx - 1) % len(self.buttons)
-            elif key in ("Right", "Tab"):
-                idx = (idx + 1) % len(self.buttons)
-            self.buttons[idx].grab_focus()
+        if key in ("Up", "ISO_Left_Tab"):
+            self.move_focus(-1)
+            return True
+        if key in ("Down", "Tab"):
+            self.move_focus(1)
             return True
         if key in ("Return", "KP_Enter", "space"):
             focused = self.get_focus()
-            if focused in self.buttons:
-                focused.clicked()
+            if focused is self.x_btn:
+                self.close_menu(run_cmd=None)
+            else:
+                for i, btn in enumerate(self.pill_buttons):
+                    if focused is btn or (focused and focused.is_ancestor(btn)):
+                        self.activate_index(i)
+                        break
+                else:
+                    self.activate_index(self.focus_index)
+            return True
+        # Number shortcuts 1-6
+        if key and len(key) == 1 and key.isdigit():
+            n = int(key)
+            if 1 <= n <= len(self.pill_buttons):
+                self.activate_index(n - 1)
                 return True
         return False
 
+    def move_focus(self, delta):
+        if not self.pill_buttons:
+            return
+        self.focus_index = (self.focus_index + delta) % len(self.pill_buttons)
+        self.pill_buttons[self.focus_index].grab_focus()
+
+    def on_pill_clicked(self, _btn, idx):
+        self.activate_index(idx)
+
+    def activate_index(self, idx):
+        if idx < 0 or idx >= len(self.actions):
+            return
+        _aid, _icon, _label, argv, _accent, _destructive = self.actions[idx]
+        # Destructive actions (Shutdown/Reboot/Logout) run immediately on confirm
+        # (click/Enter). Non-destructive run the same way here (no extra screen).
+        self.close_menu(run_cmd=argv)
+
+    # --- Open/close animations (fade + slight slide) ---
+    def animate_open(self):
+        start = GLib.get_monotonic_time()
+        duration = FADE_MS * 1000
+
+        def step():
+            if self.closing:
+                return False
+            elapsed = GLib.get_monotonic_time() - start
+            t = min(1.0, elapsed / duration) if duration else 1.0
+            # ease-out
+            e = 1 - (1 - t) * (1 - t)
+            self.set_opacity(e)
+            self.outer.set_margin_top(int(SLIDE_PX * (1 - e)))
+            return t < 1.0
+
+        GLib.timeout_add(16, step)
+
+    def close_menu(self, run_cmd=None):
+        if self.closing:
+            return
+        self.closing = True
+        start = GLib.get_monotonic_time()
+        duration = int(FADE_MS * 1000 * 0.85)
+        start_opacity = self.get_opacity()
+
+        def finish():
+            self.destroy()
+            if run_cmd:
+                run_action(run_cmd)
+            return False
+
+        def step():
+            elapsed = GLib.get_monotonic_time() - start
+            t = min(1.0, elapsed / duration) if duration else 1.0
+            e = 1 - (1 - t) * (1 - t)
+            self.set_opacity(max(0.0, start_opacity * (1 - e)))
+            self.outer.set_margin_top(int(SLIDE_PX * e))
+            if t >= 1.0:
+                finish()
+                return False
+            return True
+
+        GLib.timeout_add(16, step)
+
+
+class PowerMenuApp(Gtk.Application):
+    """Single-instance app: launching again while open toggles (closes) it."""
+
+    def __init__(self):
+        super().__init__(application_id="glasshouse.powermenu")
+        self.win = None
+
+    def do_activate(self):
+        # Toggle: if a window is already open, close it.
+        if self.win and self.win.get_visible():
+            self.win.close_menu(run_cmd=None)
+            return
+        self.win = PowerMenuWindow(self)
+        self.win.present()
+
 
 def main():
-    ensure_icons()
     load_css()
-    PowerMenu()
-    Gtk.main()
+    app = PowerMenuApp()
+    app.run(sys.argv)
 
 
 if __name__ == "__main__":
