@@ -17,6 +17,13 @@ pick_bg() {
 }
 
 while true; do
+  charge_limit=""
+  for bat in /sys/class/power_supply/BAT*; do
+      [ -r "$bat/charge_control_end_threshold" ] || continue
+      charge_limit=$(cat "$bat/charge_control_end_threshold" 2>/dev/null || true)
+      [ -n "$charge_limit" ] && break
+  done
+  charge_limit=${charge_limit:-100}
   items=( "Fondo de escritorio"
           "Avatar de perfil"
           "Fondo de la pantalla de bloqueo"
@@ -25,8 +32,9 @@ while true; do
           "Desenfoque del inicio de sesión: $(onoff sddm_blur on)"
           "Barra y dock"
           "Aplicaciones del dock"
-          "Modo bajo consumo: $(onoff low_end off)" )
-  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 9; }') || exit 0
+          "Modo bajo consumo: $(onoff low_end off)"
+          "Límite de carga: ${charge_limit}%" )
+  idx=$(printf '%s\n' "${items[@]}" | R -p "Ajustes" -theme-str 'listview { lines: 10; }') || exit 0
   case "$idx" in
     0) "$HOME/.local/bin/wallpaper-select" ;;
     1) term "$HOME/.local/bin/avatar-select" ;;
@@ -38,5 +46,6 @@ while true; do
     6) "$HOME/.local/bin/waybar-settings" ;;
     7) "$HOME/.local/bin/dock-settings" ;;
     8) "$HOME/.local/bin/low-end-toggle" toggle ;;
+    9) "$HOME/.local/bin/battery-settings" ;;
   esac
 done

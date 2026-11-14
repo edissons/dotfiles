@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+import glob
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Gdk", "3.0")
+from gi.repository import Gdk, GLib, Gtk
+
+HOME = Path.home()
+REPO = Path(__file__).resolve().parents[3]
+if not (REPO / "waybar/.config/waybar/settings.css").is_file():
+    REPO = HOME / "dotfiles"
+
+SETTINGS_CSS = REPO / "waybar/.config/waybar/settings.css"
+THEME_CSS = HOME / ".config/theme/current.css"
+
+POWER_SUPPLY = Path("/sys/class/power_supply")
+THRESHOLD_FILE = "charge_control_end_threshold"
+STATUS_NAMES = {
+    "Charging": "Cargando",
+    "Discharging": "Descargando",
+    "Full": "Completa",
+    "Not charging": "En pausa (límite)",
+    "Unknown": "Desconocido",
+}
+
+
+def read_text(path):
+    try:
+        return path.read_text(encoding="utf-8").strip()
+    except (OSError, ValueError):
+        return None
+
+
+def find_battery():
+    for entry in sorted(glob.glob(str(POWER_SUPPLY / "BAT*"))):
+        battery = Path(entry)
+        if read_text(battery / "capacity") is not None:
+            return battery
+    return None
+
+
+def find_ac():
+    for pattern in ("AC*", "ADP*", "Mains*"):
+        for entry in sorted(glob.glob(str(POWER_SUPPLY / pattern))):
+            adapter = Path(entry)
+            if read_text(adapter / "online") is not None:
+                return adapter
+    for entry in sorted(glob.glob(str(POWER_SUPPLY / "*"))):
+        adapter = Path(entry)
+        if read_text(adapter / "online") is not None:
+            return adapter
+    return None
+
+
+def load_css(path, priority):
+    if not path.is_file():
+        print(f"battery-settings: CSS not found: {path}", file=sys.stderr)
+        return None
+    provider = Gtk.CssProvider()
+    provider.connect("parsing-error", lambda _p, section, error: print(
+        f"battery-settings: CSS error in {path}:{section.get_start_line() + 1}: {error.message}",
+        file=sys.stderr,
+    ))
+    try:
+        provider.load_from_path(str(path))
+    except GLib.Error as exc:
+        print(f"battery-settings: cannot load {path}: {exc.message}", file=sys.stderr)
+        return None
+    screen = Gdk.Screen.get_default()
+    if screen is not None:
+        Gtk.StyleContext.add_provider_for_screen(screen, provider, priority)
+    return provider
+
+
+class BatteryPanel(Gtk.Window):
+    def __init__(self):
+        super().__init__(title="Batería")
+        self.set_default_size(460, 460)
+        self.get_style_context().add_class("settings-window")
+
+        self.battery = find_battery()
+        self.threshold_path = (
+            self.battery / THRESHOLD_FILE if self.battery is not None else None
+        )
+        self.ac_path = find_ac()
+        self.asusctl = shutil.which("asusctl")
+        self.busctl = shutil.which("busctl")
+
+        self.apply_source = None
+        self.verify_source = None
+        self.poll_source = None
+        self.loading = True
+
+        self.build_chrome()
+        self.populate_body()
+        self.update_status()
+
+        self.poll_source = GLib.timeout_add_seconds(2, self.update_status)
+        self.connect("destroy", self.on_destroy)
+        self.loading = False
+
+    def build_chrome(self):
+        header = Gtk.HeaderBar()
+        header.set_show_close_button(True)
+        header.get_style_context().add_class("settings-header")
+        title = Gtk.Label(label="Batería")
+        title.get_style_context().add_class("settings-title")
+        header.set_custom_title(title)
+        self.set_titlebar(header)
+
+        self.scroller = Gtk.ScrolledWindow()
+        self.scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        self.scroller.set_shadow_type(Gtk.ShadowType.NONE)
+
+        self.surface = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
+        self.surface.get_style_context().add_class("settings-surface")
+        self.surface.set_border_width(16)
+        self.scroller.add(self.surface)
+        self.add(self.scroller)
+
+    def populate_body(self):
+        self.surface.pack_start(self.section_title("ESTADO"), False, False, 0)
+        self.capacity_value = self.status_row("Capacidad")
+        self.status_value = self.status_row("Estado")
+        self.plugged_value = self.status_row("Conectado")
+
+        self.surface.pack_start(
+            self.section_title("LÍMITE DE CARGA"), False, False, 0
+        )
+        self.surface.pack_start(self.limit_row(), False, False, 0)
+        self.surface.show_all()
+
+    def section_title(self, text):
+        label = Gtk.Label(label=text, xalign=0)
+        label.get_style_context().add_class("section-title")
+        return label
+
+    def status_row(self, title):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        label = Gtk.Label(label=title, xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+
+        value = Gtk.Label(label="—", xalign=1)
+        row.pack_start(value, False, False, 0)
+
+        self.surface.pack_start(row, False, False, 0)
+        return value
+
+    def limit_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        row.get_style_context().add_class("setting-row")
+
+        self.scale = Gtk.Scale.new_with_range(
+            Gtk.Orientation.HORIZONTAL, 20, 100, 1
+        )
+        self.scale.set_digits(0)
+        self.scale.set_draw_value(True)
+        self.scale.set_value_pos(Gtk.PositionType.RIGHT)
+        self.scale.set_hexpand(True)
+        self.scale.add_mark(80, Gtk.PositionType.BOTTOM, "80%")
+        self.scale.add_mark(100, Gtk.PositionType.BOTTOM, "100%")
+        self.scale.set_value(self.initial_limit())
+        self.scale.connect("value-changed", self.on_limit_changed)
+        row.pack_start(self.scale, False, True, 0)
+
+        description = Gtk.Label(
+            label=(
+                "Umbral seguro (20–100 %). 80 % alarga la vida útil; "
+                "100 % da más autonomía."
+            ),
+            xalign=0,
+        )
+        description.set_line_wrap(True)
+        description.get_style_context().add_class("section-title")
+        row.pack_start(description, False, False, 0)
+
+        self.message = Gtk.Label(label="", xalign=0)
+        self.message.set_line_wrap(True)
+        row.pack_start(self.message, False, False, 0)
+
+        if self.threshold_path is None or not self.threshold_path.is_file():
+            self.scale.set_sensitive(False)
+            self.set_message("Este equipo no expone charge_control_end_threshold")
+        elif self.asusctl is None and self.busctl is None:
+            self.scale.set_sensitive(False)
+            self.set_message(
+                "No se encontró asusctl ni busctl; no se puede cambiar el límite."
+            )
+
+        return row
+
+    def initial_limit(self):
+        value = self.read_threshold()
+        if value is not None:
+            return value
+        value = self.asusctl_limit()
+        if value is not None:
+            return value
+        return 100
+
+    def asusctl_limit(self):
+        if self.asusctl is None:
+            return None
+        try:
+            result = subprocess.run(
+                [self.asusctl, "battery", "info"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode != 0:
+            return None
+        match = re.search(r"(\d+)\s*%", result.stdout)
+        if match is None:
+            return None
+        value = int(match.group(1))
+        return value if 20 <= value <= 100 else None
+
+    def read_threshold(self):
+        if self.threshold_path is None:
+            return None
+        raw = read_text(self.threshold_path)
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    def update_status(self):
+        capacity = (
+            read_text(self.battery / "capacity")
+            if self.battery is not None
+            else None
+        )
+        self.capacity_value.set_text(
+            f"{capacity}%" if capacity and capacity.isdigit() else "—"
+        )
+
+        raw_status = (
+            read_text(self.battery / "status")
+            if self.battery is not None
+            else None
+        )
+        self.status_value.set_text(STATUS_NAMES.get(raw_status, raw_status or "Desconocido"))
+
+        online = read_text(self.ac_path / "online") if self.ac_path is not None else None
+        self.plugged_value.set_text("Sí" if online == "1" else "No")
+        return True
+
+    def on_limit_changed(self, scale):
+        if self.loading:
+            return
+        if self.apply_source is not None:
+            GLib.source_remove(self.apply_source)
+        self.apply_source = GLib.timeout_add(
+            300, self.apply_limit, int(round(scale.get_value()))
+        )
+
+    def apply_limit(self, value):
+        self.apply_source = None
+        command = None
+        if self.asusctl is not None:
+            command = [self.asusctl, "battery", "limit", str(value)]
+        elif self.busctl is not None:
+            command = [
+                self.busctl,
+                "--system",
+                "set-property",
+                "xyz.ljones.Asusd",
+                "/xyz/ljones",
+                "xyz.ljones.Platform",
+                "ChargeControlEndThreshold",
+                "y",
+                str(value),
+            ]
+        if command is None:
+            return False
+
+        try:
+            result = subprocess.run(
+                command, capture_output=True, text=True, timeout=10
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.set_message(f"Error al aplicar: {exc}", "error")
+            return False
+
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "").strip()
+            detail = " ".join(detail.split()) or f"código {result.returncode}"
+            self.set_message(f"Error al aplicar: {detail}", "error")
+            return False
+
+        if self.verify_source is not None:
+            GLib.source_remove(self.verify_source)
+        self.verify_source = GLib.timeout_add(400, self.verify_limit, value)
+        return False
+
+    def verify_limit(self, value):
+        self.verify_source = None
+        read = self.read_threshold()
+        if read is None:
+            self.set_message(f"Aplicado: {value} % (sin lectura de sysfs)", "ok")
+        elif read == value:
+            self.set_message(f"Aplicado: {value} %", "ok")
+        else:
+            self.set_message(f"Pendiente de confirmar (leído {read} %)")
+        return False
+
+    def set_message(self, text, kind=None):
+        context = self.message.get_style_context()
+        context.remove_class("error-text")
+        context.remove_class("ok-text")
+        if kind == "ok":
+            context.add_class("ok-text")
+        elif kind == "error":
+            context.add_class("error-text")
+        self.message.set_text(text)
+
+    def on_destroy(self, _window):
+        for source in (self.apply_source, self.verify_source, self.poll_source):
+            if source is not None:
+                GLib.source_remove(source)
+        self.apply_source = None
+        self.verify_source = None
+        self.poll_source = None
+        Gtk.main_quit()
+
+
+def main():
+    load_css(THEME_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER)
+    load_css(SETTINGS_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
+
+    panel = BatteryPanel()
+    panel.show_all()
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

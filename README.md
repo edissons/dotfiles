@@ -314,6 +314,11 @@ sddm qt5-quickcontrols2 qt5-graphicaleffects fontconfig
 ### Otros (opcionales, fuera de perfiles)
 
 - `kvantum`, `kvantum-qt5`, `qt5ct`, `qt6ct`: integración Qt/Kvantum.
+- `asusd` + `asusctl` (hardware ASUS): habilitan el límite de carga. El slider
+  de `battery-settings` y el aviso «Batería cargada» de `battery-alert` dependen
+  de `charge_control_end_threshold`; sin ese archivo, el aviso usa
+  `CHARGE_LIMIT_FALLBACK` (100) y el slider se deshabilita. `install.sh` no
+  instala `asusctl` ni `asusd`.
 - Para migrar la configuración: `hyprconf2lua >= 1.7.0` (vía `pipx` o clon
   local).
 
@@ -485,6 +490,7 @@ El menú de Ajustes se abre desde el botón de engranaje de Waybar o con `SUPER+
 | Barra y dock | Abre el panel GTK3 `waybar-settings`: módulos de la barra, auto-ocultado y ajustes del dock. |
 | Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. Esta entrada vive solo en el menú principal de Ajustes. |
 | Modo bajo consumo | Activa o desactiva `low-end-toggle`: menos efectos y perfil de energía más ligero. |
+| Límite de carga: N % | Abre el panel GTK3 `battery-settings`: estado de la batería y límite de carga (20–100 %). |
 
 El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
 
@@ -624,7 +630,8 @@ ejecuta `%h/.local/bin/battery-alert`, usa `Restart=always` con `RestartSec=5`,
 desde `hyprland.lua`, así que no hay doble instancia. El script mantiene una
 única instancia con `flock` en `$XDG_RUNTIME_DIR`, consulta cada 15 s
 `/sys/class/power_supply/BAT*` y la fuente AC (`AC*|ADP*|Mains*`) y guarda
-estado en `$XDG_RUNTIME_DIR`.
+estado en `$XDG_RUNTIME_DIR`. En cada ciclo también lee el límite de carga real
+de `charge_control_end_threshold` (fallback `CHARGE_LIMIT_FALLBACK`, 100).
 
 - **Batería (solo en descarga):** avisos *edge-triggered* con histéresis. Al
   arrancar se inicializa el estado (`initialized=1`, `prev_plugged` actual y
@@ -636,6 +643,13 @@ estado en `$XDG_RUNTIME_DIR`.
 - **Cargador:** notifica y reproduce sonido al conectar o desconectar
   (transición detectada). La primera lectura solo fija `prev_plugged`, así que
   no hay aviso de cargador en el primer ciclo.
+- **Batería cargada (límite):** con el equipo enchufado, cuando la batería
+  alcanza el límite de carga real notifica una sola vez «Batería cargada (N%)»
+  con sonido. Se considera alcanzado si `status` es `Not charging`/`Full` o si
+  `capacity >= límite`, y se exige `capacity <= límite + 2` para no avisar al
+  bajar el límite por debajo del nivel actual. El rearme ocurre al desenchufar
+  o al bajar `CHARGED_REARM_DELTA` (5) puntos respecto al límite; el estado
+  `warned_charged` se guarda junto al resto.
 - **Sonido:** reproduce con `pw-play`, `paplay`, `canberra-gtk-play`, `aplay` o
   `mpv` en segundo plano; si no hay reproductor o `notify-send`, degrada sin
   fallo. No instala paquetes nuevos obligatorios.
@@ -649,6 +663,7 @@ SOUND_LOW=/usr/share/sounds/freedesktop/stereo/dialog-warning.oga
 SOUND_CRITICAL=/usr/share/sounds/freedesktop/stereo/suspend-error.oga
 SOUND_PLUG=/usr/share/sounds/freedesktop/stereo/power-plug.oga
 SOUND_UNPLUG=/usr/share/sounds/freedesktop/stereo/power-unplug.oga
+SOUND_CHARGED=/usr/share/sounds/freedesktop/stereo/power-plug.oga
 
 # Umbrales y rearme por histéresis
 LOW_THRESHOLD=20
@@ -657,6 +672,10 @@ VERY_CRITICAL_THRESHOLD=5
 LOW_REARM=25
 CRITICAL_REARM=15
 VERY_CRITICAL_REARM=10
+
+# Límite de carga (hardware ASUS)
+CHARGE_LIMIT_FALLBACK=100
+CHARGED_REARM_DELTA=5
 ```
 
 Si el archivo no existe, usa esos defaults de freedesktop cuando los archivos de
@@ -736,6 +755,56 @@ systemctl --user disable --now battery-alert.service
 
 Eso detiene la unidad y evita que arranque en la siguiente sesión. No hace falta
 tocar `hyprland.lua` ni usar `pkill`.
+
+### Límite de carga
+
+`battery-settings` (`scripts/.local/bin/battery-settings`) es un panel GTK3 para
+consultar la batería y fijar el umbral de carga. Se abre desde Ajustes
+(engranaje de Waybar o `SUPER+,`), en su última entrada «Límite de carga: N %»,
+o directamente:
+
+```bash
+~/.local/bin/battery-settings
+```
+
+El panel tiene dos secciones:
+
+- **ESTADO**: capacidad, estado traducido (`Cargando`, `Descargando`, `Completa`,
+  `En pausa (límite)`, `Desconocido`) y si el equipo está conectado. Se refresca
+  cada 2 s.
+- **LÍMITE DE CARGA**: slider de 20 a 100 % con marcas en 80 % y 100 %.
+
+El valor se aplica con un debounce de 300 ms, así que varios movimientos
+seguidos producen una sola invocación con el último valor:
+
+```bash
+asusctl battery limit N
+```
+
+`asusctl` pide el cambio por D-Bus a `asusd`, que lo persiste entre reinicios.
+Si `asusctl` no está disponible, el panel usa el fallback:
+
+```bash
+busctl --system set-property xyz.ljones.Asusd /xyz/ljones \
+  xyz.ljones.Platform ChargeControlEndThreshold y N
+```
+
+El panel **no usa `sudo` ni `pkexec`** y no escribe sysfs ni
+`/etc/asusd/asusd.ron`: delega en `asusd`. Tras aplicar, relee
+`charge_control_end_threshold` y muestra «Aplicado: N %»; si sysfs todavía no
+refleja el valor, «Pendiente de confirmar», y si el comando falla, el error
+devuelto.
+
+El slider se desactiva si no hay batería, si el equipo no expone
+`charge_control_end_threshold` o si no hay ni `asusctl` ni `busctl`, e indica el
+motivo en el panel.
+
+Alternativa por terminal, sin abrir el panel:
+
+```bash
+asusctl battery limit 60
+asusctl battery info
+```
 
 ## Fuentes
 
@@ -1306,9 +1375,13 @@ español y usa `⊞` para la tecla Super:
 - `scripts/.local/bin/bluetooth-toggle`: activa, desactiva o alterna Bluetooth y
   abre el gestor (`on|off|toggle|status|manager`).
 - `scripts/.local/bin/battery-alert`: daemon de alertas de batería (20/10/5% en
-  descarga, con histéresis) y de conexión/desconexión del cargador; sonidos y
-  umbrales configurables en `~/.config/battery-alert/config`, arranque por la
-  unidad de usuario `battery-alert.service`.
+  descarga, con histéresis), de conexión/desconexión del cargador y de límite de
+  carga alcanzado; sonidos y umbrales configurables en
+  `~/.config/battery-alert/config`, arranque por la unidad de usuario
+  `battery-alert.service`.
+- `scripts/.local/bin/battery-settings`: panel GTK3 «Batería» con el estado y el
+  slider de límite de carga (20–100 %); aplica con `asusctl`/`busctl` sin
+  `sudo`. Comparte `waybar/.config/waybar/settings.css` con `waybar-settings`.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.

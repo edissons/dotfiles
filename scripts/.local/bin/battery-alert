@@ -19,6 +19,9 @@ VERY_CRITICAL_THRESHOLD="${VERY_CRITICAL_THRESHOLD:-5}"
 LOW_REARM="${LOW_REARM:-25}"
 CRITICAL_REARM="${CRITICAL_REARM:-15}"
 VERY_CRITICAL_REARM="${VERY_CRITICAL_REARM:-10}"
+CHARGE_LIMIT_FALLBACK="${CHARGE_LIMIT_FALLBACK:-100}"
+CHARGED_REARM_DELTA="${CHARGED_REARM_DELTA:-5}"
+SOUND_CHARGED="${SOUND_CHARGED:-$SOUND_PLUG}"
 
 # Log de diagnóstico opt-in (BATTERY_ALERT_DEBUG=1). Sin esa variable no escribe nada.
 dbg() {
@@ -37,9 +40,10 @@ load_config() {
             ''|\#*) continue ;;
         esac
         case "$line" in
-            SOUND_LOW=*|SOUND_CRITICAL=*|SOUND_PLUG=*|SOUND_UNPLUG=*|\
+            SOUND_LOW=*|SOUND_CRITICAL=*|SOUND_PLUG=*|SOUND_UNPLUG=*|SOUND_CHARGED=*|\
             LOW_THRESHOLD=*|CRITICAL_THRESHOLD=*|VERY_CRITICAL_THRESHOLD=*|\
-            LOW_REARM=*|CRITICAL_REARM=*|VERY_CRITICAL_REARM=*)
+            LOW_REARM=*|CRITICAL_REARM=*|VERY_CRITICAL_REARM=*|\
+            CHARGE_LIMIT_FALLBACK=*|CHARGED_REARM_DELTA=*)
                 key=${line%%=*}
                 val=${line#*=}
                 # quita comillas simples/dobles envolventes
@@ -105,6 +109,8 @@ play_sound() {
             file=$SOUND_PLUG; id=power-plug ;;
         unplug|power-unplug)
             file=$SOUND_UNPLUG; id=power-unplug ;;
+        charged|battery-charged)
+            file=$SOUND_CHARGED; id=complete ;;
         none|"")
             dbg "sound kind=${kind:-none} player=none rc=0"
             return 0 ;;
@@ -149,6 +155,7 @@ play_sound() {
         critical|suspend-error) play_canberra_id suspend-error || play_canberra_id dialog-error || rc=$? ;;
         plug|power-plug) play_canberra_id power-plug || play_canberra_id device-added || rc=$? ;;
         unplug|power-unplug) play_canberra_id power-unplug || play_canberra_id device-removed || rc=$? ;;
+        charged|battery-charged) play_canberra_id complete || play_canberra_id dialog-information || true ;;
     esac
     if [ "$rc" = "0" ]; then
         dbg "sound kind=$kind player=canberra-gtk-play rc=0"
@@ -188,6 +195,7 @@ prev_plugged=$prev_plugged
 warned_low=$warned_low
 warned_critical=$warned_critical
 warned_very_critical=$warned_very_critical
+warned_charged=$warned_charged
 initialized=$initialized
 EOF
     mv -f "$STATE.tmp.$$" "$STATE"
@@ -198,12 +206,13 @@ load_state() {
     warned_low=0
     warned_critical=0
     warned_very_critical=0
+    warned_charged=0
     initialized=0
     [ -r "$STATE" ] || return 0
     # shellcheck disable=SC1090
     while IFS= read -r line || [ -n "$line" ]; do
         case "$line" in
-            prev_plugged=*|warned_low=*|warned_critical=*|warned_very_critical=*|initialized=*)
+            prev_plugged=*|warned_low=*|warned_critical=*|warned_very_critical=*|warned_charged=*|initialized=*)
                 key=${line%%=*}; val=${line#*=}
                 printf -v "$key" '%s' "$val"
                 ;;
@@ -238,10 +247,16 @@ while true; do
     ac_online="0"
     if [ -n "$BAT_PATH" ] && [ -r "$BAT_PATH/capacity" ]; then
         capacity=$(<"$BAT_PATH/capacity")
-        status=$(<"$BAT_PATH/status" 2>/dev/null || echo Unknown)
+        status=$(cat "$BAT_PATH/status" 2>/dev/null || echo Unknown)
     fi
     if [ -n "${AC_PATH:-}" ] && [ -r "$AC_PATH/online" ]; then
         ac_online=$(<"$AC_PATH/online")
+    fi
+
+    charge_limit=$CHARGE_LIMIT_FALLBACK
+    if [ -n "$BAT_PATH" ] && [ -r "$BAT_PATH/charge_control_end_threshold" ]; then
+        _cl=$(cat "$BAT_PATH/charge_control_end_threshold" 2>/dev/null || true)
+        if [[ "$_cl" =~ ^[0-9]+$ ]]; then charge_limit=$_cl; fi
     fi
 
     if [ -z "$capacity" ] || ! [[ "$capacity" =~ ^[0-9]+$ ]]; then
@@ -256,6 +271,14 @@ while true; do
     discharging=0
     if is_discharging "$ac_online" "$status"; then
         discharging=1
+    fi
+
+    charged=0
+    if [ "$plugged" = "1" ] && [ "$capacity" -ge $((charge_limit - 2)) ] && [ "$capacity" -le $((charge_limit + 2)) ]; then
+        case "$status" in
+            "Not charging"|"Full") charged=1 ;;
+            *) if [ "$capacity" -ge "$charge_limit" ]; then charged=1; fi ;;
+        esac
     fi
 
     if [ "$initialized" != "1" ]; then
@@ -279,10 +302,20 @@ while true; do
         prev_plugged=$plugged
     fi
 
+    if [ "$charged" = "1" ] && [ "$warned_charged" != "1" ]; then
+        warned_charged=1
+        notify normal "Batería cargada (${charge_limit}%)" "Límite de carga alcanzado. Puedes seguir conectado; el equipo no cargará más."
+        play_sound charged
+        dbg "charged limit=$charge_limit capacity=$capacity status=\"$status\" notified=1"
+    fi
+
     # Rearmes por histéresis
     if [ "$capacity" -ge "$LOW_REARM" ]; then warned_low=0; fi
     if [ "$capacity" -ge "$CRITICAL_REARM" ]; then warned_critical=0; fi
     if [ "$capacity" -ge "$VERY_CRITICAL_REARM" ]; then warned_very_critical=0; fi
+    if [ "$plugged" != "1" ] || [ "$capacity" -le $((charge_limit - CHARGED_REARM_DELTA)) ]; then
+        warned_charged=0
+    fi
 
     # Alertas solo en descarga
     if [ "$discharging" = "1" ]; then
