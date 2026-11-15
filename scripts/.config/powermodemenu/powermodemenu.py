@@ -338,10 +338,20 @@ def css():
         badge_bg = "alpha(@text, 0.14)"
         card_shadow = "0 14px 34px rgba(0,0,0,0.35)"
     return f"""
-    /* Compact floating card (anchored TOP+RIGHT, sized to content) */
-    window {{ background: transparent; }}
+    /* Compact floating card (anchored TOP+RIGHT, sized to content).
+     * settings.css styles `window` globally; reset it so only the card is visible. */
+    window,
+    window.powermodemenu-window {{
+        background: transparent;
+        background-color: transparent;
+        background-image: none;
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+    }}
     .pm-card {{
         background: {bg};
+        background-color: {bg};
         color: {fg};
         border: 1px solid {border};
         border-radius: {RADIUS}px;
@@ -387,17 +397,15 @@ def css():
     button.pm-mode:hover .pm-row,
     button.pm-mode:focus .pm-row,
     button.pm-mode:focus-visible .pm-row {{
-        background-color: alpha(@text, 0.12);
-        border-color: alpha(@border, 0.9);
+        background-color: alpha(@text, 0.10);
+    }}
+    .pm-row.selected {{
+        background-color: {row_sel};
+        border-color: alpha(@accent, 0.40);
     }}
     button.pm-mode:hover .pm-row.selected,
     button.pm-mode:focus .pm-row.selected {{
         background-color: {row_sel};
-        border-color: alpha(@accent, 0.45);
-    }}
-    .pm-row.selected {{
-        background-color: {row_sel};
-        border-color: alpha(@accent, 0.45);
     }}
     .pm-badge {{
         min-width: 32px; min-height: 32px; border-radius: 16px;
@@ -436,7 +444,7 @@ def css():
     }}
     button.pm-toggle:hover .pm-toggle-row,
     button.pm-toggle:focus .pm-toggle-row {{
-        background-color: alpha(@text, 0.12);
+        background-color: alpha(@text, 0.10);
     }}
     .pm-chevron {{ color: {sub}; font-size: 14px; font-weight: 600; }}
 
@@ -493,14 +501,16 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         LayerShell.set_margin(self, LayerShell.Edge.RIGHT, MARGIN_RIGHT)
 
         self.set_decorated(False)
-        # Compact popup: ~300px wide, height sized to content
+        self.add_css_class("powermodemenu-window")
+        # Compact popup: ~300px wide, height sized to content (anchored TOP+RIGHT only)
         self.set_default_size(300, -1)
 
-        # Card
-        self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        # Card (single floating panel)
+        self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.card.add_css_class("pm-card")
         self.card.set_hexpand(False)
         self.card.set_vexpand(False)
+        self.card.set_size_request(300, -1)
         self.set_child(self.card)
 
         self.build_ui()
