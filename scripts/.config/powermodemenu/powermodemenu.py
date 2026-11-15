@@ -313,31 +313,27 @@ def load_theme_css():
             pass
 
 def css():
-    light = _is_light_mode()
-    if light:
-        bg = "alpha(@bg, 0.82)"
-        fg = "@text"
-        sub = "@subtext"
-        border = "alpha(@border, 0.9)"
-        row_hover = "alpha(@text, 0.06)"
-        row_sel = "alpha(@accent, 0.18)"
-        sep = "alpha(@border, 0.7)"
-        badge_bg = "alpha(@text, 0.10)"
-        card_shadow = "0 12px 30px rgba(0,0,0,0.18)"
-    else:
-        bg = "alpha(@bg, 0.78)"
-        fg = "@text"
-        sub = "@subtext"
-        border = "alpha(@border, 0.9)"
-        row_hover = "alpha(@text, 0.08)"
-        row_sel = "alpha(@accent, 0.22)"
-        sep = "alpha(@border, 0.7)"
-        badge_bg = "alpha(@text, 0.14)"
-        card_shadow = "0 14px 34px rgba(0,0,0,0.35)"
+    # --- Visual tuning (single place) ---
+    CARD_ALPHA = 0.55          # card fill alpha; must be > Hyprland ignore_alpha for blur
+    RADIUS_PX = 20             # card corner radius
+    BORDER_RGBA = "rgba(255,255,255,0.14)"
+    INSET_HIGHLIGHT = "inset 0 1px 0 rgba(255,255,255,0.14)"
+    TEXT_PRIMARY = "rgba(255,255,255,0.92)"
+    TEXT_SECONDARY = "rgba(255,255,255,0.55)"
+    ACCENT = "#0a84ff"
+    SEP_RGBA = "rgba(255,255,255,0.10)"
+    ROW_HOVER = "rgba(255,255,255,0.10)"
+    ROW_SELECTED = "rgba(10,132,255,0.22)"
+    BADGE_NEUTRAL = "rgba(255,255,255,0.10)"
+    CARD_PAD = 12              # outer padding (only on card)
+    CONTENT_INSET = 8          # horizontal inset for rows/toggle (aligns with text lines)
+    # Card fill (dark glass). Kept explicit so blur/ignore_alpha can be tuned consistently.
+    CARD_BG = f"rgba(24, 26, 34, {CARD_ALPHA})"
+
     return f"""
-    /* Compact floating card (anchored TOP+RIGHT, sized to content).
-     * settings.css styles `window` globally; reset it so only the card is visible. */
+    /* Window and parents: fully transparent so only the card is visible */
     window,
+    window.background,
     window.powermodemenu-window {{
         background: transparent;
         background-color: transparent;
@@ -348,21 +344,47 @@ def css():
         min-width: 0;
         min-height: 0;
     }}
-    .pm-card {{
-        background: {bg};
-        background-color: {bg};
-        color: {fg};
-        border: 1px solid {border};
-        border-radius: {RADIUS}px;
-        padding: 10px;
-        margin: 0;
-    }}
-    .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
-    .pm-sub {{ color: {sub}; font-size: 12px; }}
-    .pm-sep {{ background: {sep}; min-height: 1px; margin: 6px 0; }}
-    .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 4px 6px 2px 6px; letter-spacing: 0.2px; }}
 
-    /* Flat rows on card (no inner bordered cards) */
+    /* Card: the only filled/glass element */
+    .pm-card {{
+        background: {CARD_BG};
+        background-color: {CARD_BG};
+        color: {TEXT_PRIMARY};
+        border: 1px solid {BORDER_RGBA};
+        border-radius: {RADIUS_PX}px;
+        padding: {CARD_PAD}px;
+        margin: 0;
+        box-shadow: {INSET_HIGHLIGHT};
+    }}
+
+    /* Force colors (override GTK theme accent) */
+    .pm-card label,
+    .pm-card button,
+    .pm-card button label {{
+        color: {TEXT_PRIMARY};
+    }}
+    .pm-header {{ font-weight: 700; font-size: 15px; color: {TEXT_PRIMARY}; }}
+    .pm-sub {{ color: {TEXT_SECONDARY}; font-size: 12px; }}
+    .pm-section {{ color: {TEXT_SECONDARY}; font-size: 12px; font-weight: 600; letter-spacing: 0.2px; }}
+    .pm-hint {{ color: {TEXT_SECONDARY}; font-size: 12px; }}
+
+    /* Consistent horizontal alignment: text lines share the same left x as row content.
+     * Rows have CONTENT_INSET padding; header/source/section/status/hint get the same inset. */
+    .pm-inset {{
+        margin-left: {CONTENT_INSET}px;
+        margin-right: {CONTENT_INSET}px;
+    }}
+
+    .pm-sep {{
+        background: {SEP_RGBA};
+        min-height: 1px;
+        margin-top: 6px;
+        margin-bottom: 6px;
+        margin-left: 0;
+        margin-right: 0;
+    }}
+
+    /* Flat rows on card */
     button.pm-mode {{
         background: none;
         background-image: none;
@@ -373,7 +395,7 @@ def css():
         border: none;
         outline: none;
         margin: 0;
-        padding: 0 8px;
+        padding: 0 {CONTENT_INSET}px;
         min-height: 44px;
         border-radius: 12px;
         transition: background-color 120ms ease;
@@ -381,12 +403,12 @@ def css():
     button.pm-mode:hover,
     button.pm-mode:focus,
     button.pm-mode:focus-visible {{
-        background-color: alpha(@text, 0.12);
+        background-color: {ROW_HOVER};
     }}
     button.pm-mode.selected,
     button.pm-mode.selected:hover,
     button.pm-mode.selected:focus {{
-        background-color: {row_sel};
+        background-color: {ROW_SELECTED};
     }}
     .pm-row {{
         background: transparent;
@@ -397,11 +419,22 @@ def css():
     }}
     .pm-badge {{
         min-width: 32px; min-height: 32px; border-radius: 16px;
-        background: alpha(@text, 0.14); color: {fg}; font-size: 13px; font-weight: 700;
+        background: {BADGE_NEUTRAL};
+        color: {TEXT_PRIMARY};
+        font-size: 16px;
+        font-weight: 400;
     }}
-    .pm-badge.selected {{ background: @accent; color: #ffffff; }}
-    button.pm-disabled {{ opacity: 0.45; }}
-    .pm-hint {{ color: {sub}; font-size: 11px; margin: 0 6px; }}
+    .pm-badge.selected {{
+        background: {ACCENT};
+        color: #ffffff;
+    }}
+    button.pm-disabled {{
+        opacity: 0.4;
+    }}
+    button.pm-disabled:hover,
+    button.pm-disabled:focus {{
+        background-color: transparent;
+    }}
 
     /* Battery Settings toggle row */
     button.pm-toggle {{
@@ -412,7 +445,7 @@ def css():
         text-shadow: none;
         border: none;
         outline: none;
-        padding: 0 8px;
+        padding: 0 {CONTENT_INSET}px;
         margin: 0;
         min-height: 44px;
         border-radius: 12px;
@@ -420,7 +453,7 @@ def css():
     }}
     button.pm-toggle:hover,
     button.pm-toggle:focus {{
-        background-color: alpha(@text, 0.12);
+        background-color: {ROW_HOVER};
     }}
     .pm-toggle-row {{
         background: transparent;
@@ -428,34 +461,38 @@ def css():
         padding: 0;
         margin: 0;
     }}
-    .pm-chevron {{ color: {sub}; font-size: 14px; font-weight: 600; }}
+    .pm-chevron {{ color: {TEXT_SECONDARY}; font-size: 16px; font-weight: 400; }}
 
     .pm-charge {{
         margin: 0;
-        padding: 6px 8px 4px 8px;
+        padding: 6px {CONTENT_INSET}px 4px {CONTENT_INSET}px;
     }}
+    .pm-charge label {{
+        color: {TEXT_SECONDARY};
+    }}
+
     /* Presets: flat action buttons */
     button.pm-preset {{
         min-height: 0;
         padding: 4px 12px;
-        background-color: alpha(@text, 0.06);
+        background-color: rgba(255,255,255,0.06);
         background-image: none;
-        border: 1px solid {sep};
+        border: 1px solid {SEP_RGBA};
         border-radius: 10px;
-        color: @text;
+        color: {TEXT_PRIMARY};
         box-shadow: none;
         text-shadow: none;
     }}
     button.pm-preset:hover {{
-        background-color: alpha(@text, 0.12);
-        border-color: alpha(@accent, 0.5);
+        background-color: rgba(255,255,255,0.12);
+        border-color: rgba(10,132,255,0.5);
     }}
     button.pm-preset:active {{
-        background-color: alpha(@text, 0.16);
+        background-color: rgba(255,255,255,0.16);
     }}
-    scale trough {{ border-radius: 999px; min-height: 6px; background: alpha(@text, 0.12); }}
-    scale highlight {{ border-radius: 999px; min-height: 6px; background: @accent; }}
-    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: @text; box-shadow: none; }}
+    scale trough {{ border-radius: 999px; min-height: 6px; background: rgba(255,255,255,0.12); }}
+    scale highlight {{ border-radius: 999px; min-height: 6px; background: {ACCENT}; }}
+    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: #ffffff; box-shadow: none; }}
     """
 
 
@@ -491,6 +528,11 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.card.set_hexpand(False)
         self.card.set_vexpand(False)
         self.card.set_size_request(300, -1)
+        # Clip children to rounded corners (GTK4)
+        try:
+            self.card.set_overflow(Gtk.Overflow.HIDDEN)
+        except Exception:
+            pass
         self.set_child(self.card)
 
         self.build_ui()
@@ -519,6 +561,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
     def build_ui(self):
         # Header: "Battery" + percentage
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        hdr.add_css_class("pm-inset")
         t = Gtk.Label(label=L["battery"], xalign=0)
         t.add_css_class("pm-header")
         t.set_hexpand(True)
@@ -530,32 +573,36 @@ class PowerModeMenu(Gtk.ApplicationWindow):
 
         self.source_label = Gtk.Label(label=f"{L['power_source']}: —", xalign=0)
         self.source_label.add_css_class("pm-sub")
+        self.source_label.add_css_class("pm-inset")
         self.card.append(self.source_label)
 
         self.sep()
         sec = Gtk.Label(label=L["energy_mode"], xalign=0)
         sec.add_css_class("pm-section")
+        sec.add_css_class("pm-inset")
         self.card.append(sec)
 
-        # Mode rows
+        # Mode rows (Nerd Font glyphs; fallback: system sans if font missing)
         self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.card.append(self.modes_box)
         for mode, label, icon in (
-            ("automatic", L["automatic"], "A"),
-            ("low", L["low"], "L"),
-            ("high", L["high"], "H"),
-            ("gaming", L["gaming"], "G"),
+            ("automatic", L["automatic"], "󰁹"),  # battery
+            ("low",       L["low"],       "󰌪"),  # leaf
+            ("high",      L["high"],      "󰓅"),  # lightning bolt
+            ("gaming",    L["gaming"],    "󰊴"),  # gamepad
         ):
             row = self.make_mode_row(mode, label, icon)
             self.modes_box.append(row)
 
         self.gaming_hint = Gtk.Label(label="", xalign=0)
         self.gaming_hint.add_css_class("pm-hint")
+        self.gaming_hint.add_css_class("pm-inset")
         self.card.append(self.gaming_hint)
 
         self.sep()
         self.energy_label = Gtk.Label(label=L["no_apps"], xalign=0)
         self.energy_label.add_css_class("pm-sub")
+        self.energy_label.add_css_class("pm-inset")
         self.energy_label.set_wrap(True)
         self.card.append(self.energy_label)
 
@@ -631,10 +678,14 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         btn = Gtk.Button()
         btn.set_has_frame(False)
         btn.add_css_class("pm-mode")
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         row.add_css_class("pm-row")
         badge = Gtk.Label(label=icon)
         badge.add_css_class("pm-badge")
+        badge.set_halign(Gtk.Align.CENTER)
+        badge.set_valign(Gtk.Align.CENTER)
+        badge.set_xalign(0.5)
+        badge.set_yalign(0.5)
         badge.set_size_request(32, 32)
         row.append(badge)
         txt = Gtk.Label(label=label, xalign=0)
@@ -854,7 +905,7 @@ def main():
     provider = Gtk.CssProvider()
     provider.load_from_data(css().encode("utf-8"))
     Gtk.StyleContext.add_provider_for_display(
-        Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        Gdk.Display.get_default(), provider, Gtk.STYLE_PROVIDER_PRIORITY_USER
     )
     app = App(dry_run=args.dry_run)
     return app.run([])
