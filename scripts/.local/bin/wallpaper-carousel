@@ -38,6 +38,8 @@ apply_wallpaper() {
   [ -n "$path" ] && [ -f "$path" ] || return 1
   local old tmp
   old=$(pgrep -x swaybg || true)
+  # Close lock fd (if held) so background swaybg does not inherit and keep it.
+  exec 9>&- 2>/dev/null || true
   setsid nohup swaybg -i "$path" -m fill >/dev/null 2>&1 &
   sleep 0.4
   if [ -n "$old" ]; then
@@ -130,18 +132,22 @@ tick() {
   mkdir -p "$(dirname "$LOCK")"
   exec 9>"$LOCK"
   if ! flock -n 9; then
+    exec 9>&- 2>/dev/null || true
     return 0
   fi
   do_change
+  exec 9>&- 2>/dev/null || true
 }
 
 next_forced() {
   mkdir -p "$(dirname "$LOCK")"
   exec 9>"$LOCK"
   if ! flock -n 9; then
+    exec 9>&- 2>/dev/null || true
     return 0
   fi
   do_change
+  exec 9>&- 2>/dev/null || true
 }
 
 run_loop() {
