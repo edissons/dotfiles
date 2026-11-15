@@ -45,8 +45,7 @@ NAMESPACE = "powermodemenu"
 MARGIN_TOP = 42   # pixels below top edge (adjust to sit under Waybar)
 MARGIN_RIGHT = 12 # align with Waybar right margin
 
-# Glass theme variables (dark defaults; set LIGHT_GLASS=True for light variant)
-LIGHT_GLASS = False
+# Glass theme variables (card radius). Colors follow theme tokens when available.
 RADIUS = 18
 
 # Optional WiFi power-save tweak (OFF by default; unstable on some chipsets e.g. MT7902)
@@ -63,6 +62,90 @@ HELPER_INSTALLED = Path("/usr/local/lib/powermodemenu/powermodemenu-helper")
 HELPER_REPO = Path(__file__).resolve().parents[2] / "scripts/.local/lib/powermodemenu/powermodemenu-helper"
 
 MODES = ("automatic", "low", "high", "gaming")
+
+# -----------------------------------------------------------------------------
+# Localization (system language: LC_MESSAGES/LANG)
+# -----------------------------------------------------------------------------
+def detect_lang():
+    lang = (os.environ.get("LC_ALL") or os.environ.get("LC_MESSAGES") or os.environ.get("LANG") or "").lower()
+    if lang.startswith("es"):
+        return "es"
+    if lang.startswith("pt"):
+        return "pt"
+    return "en"
+
+STRINGS = {
+    "en": {
+        "battery": "Battery",
+        "power_source": "Power Source",
+        "ac": "Power Adapter",
+        "bat": "Battery",
+        "energy_mode": "Energy Mode",
+        "automatic": "Automatic",
+        "low": "Low Power",
+        "high": "High Power",
+        "gaming": "Gaming",
+        "gaming_hint": "Gaming: Connect the power adapter",
+        "no_apps": "No Apps Using Significant Energy",
+        "apps_using": "Apps Using Significant Energy",
+        "battery_settings": "Battery Settings",
+        "charge_limit": "Charge limit",
+        "applied": "Applied",
+        "error": "Error",
+        "dry_run": "dry-run",
+        "notif_unplug_title": "Power mode",
+        "notif_unplug_body": "Charger unplugged: switched to Automatic",
+        "notif_gaming_title": "Gaming mode",
+        "notif_gaming_body": "Connect the power adapter",
+    },
+    "es": {
+        "battery": "Batería",
+        "power_source": "Fuente de energía",
+        "ac": "Adaptador de corriente",
+        "bat": "Batería",
+        "energy_mode": "Modo de energía",
+        "automatic": "Automático",
+        "low": "Bajo consumo",
+        "high": "Alto rendimiento",
+        "gaming": "Juego",
+        "gaming_hint": "Juego: conecta el adaptador de corriente",
+        "no_apps": "Ninguna app usa mucha energía",
+        "apps_using": "Apps con alto consumo de energía",
+        "battery_settings": "Ajustes de batería",
+        "charge_limit": "Límite de carga",
+        "applied": "Aplicado",
+        "error": "Error",
+        "dry_run": "prueba",
+        "notif_unplug_title": "Modo de energía",
+        "notif_unplug_body": "Cargador desconectado: cambiado a Automático",
+        "notif_gaming_title": "Modo Juego",
+        "notif_gaming_body": "Conecta el adaptador de corriente",
+    },
+    "pt": {
+        "battery": "Bateria",
+        "power_source": "Fonte de energia",
+        "ac": "Adaptador de energia",
+        "bat": "Bateria",
+        "energy_mode": "Modo de energia",
+        "automatic": "Automático",
+        "low": "Baixo consumo",
+        "high": "Alto desempenho",
+        "gaming": "Jogo",
+        "gaming_hint": "Jogo: conecte o adaptador de energia",
+        "no_apps": "Nenhum app usando energia significativa",
+        "apps_using": "Apps usando energia significativa",
+        "battery_settings": "Ajustes de bateria",
+        "charge_limit": "Limite de carga",
+        "applied": "Aplicado",
+        "error": "Erro",
+        "dry_run": "teste",
+        "notif_unplug_title": "Modo de energia",
+        "notif_unplug_body": "Carregador desconectado: alterado para Automático",
+        "notif_gaming_title": "Modo Jogo",
+        "notif_gaming_body": "Conecte o adaptador de energia",
+    },
+}
+L = STRINGS[detect_lang()]
 
 # -----------------------------------------------------------------------------
 # Helpers: system reads (no privileges required)
@@ -108,7 +191,7 @@ def is_on_ac():
 
 
 def get_power_source_label():
-    return "Power Adapter" if is_on_ac() else "Battery"
+    return L["ac"] if is_on_ac() else L["bat"]
 
 
 def get_charge_limit():
@@ -210,23 +293,50 @@ def notify(summary, body=""):
 # -----------------------------------------------------------------------------
 # GTK4 UI
 # -----------------------------------------------------------------------------
+def _is_light_mode():
+    mode = read_text(Path.home() / ".config/theme/mode")
+    return (mode or "").strip().lower() == "light"
+
+def load_theme_css():
+    display = Gdk.Display.get_default()
+    if not display:
+        return
+    # Base theme tokens (colors) used across Glasshouse panels
+    for path, prio in [
+        (Path.home() / ".config/theme/current.css", Gtk.STYLE_PROVIDER_PRIORITY_USER),
+        (Path.home() / "dotfiles/waybar/.config/waybar/settings.css", Gtk.STYLE_PROVIDER_PRIORITY_USER + 1),
+    ]:
+        if not path.is_file():
+            continue
+        provider = Gtk.CssProvider()
+        try:
+            provider.load_from_path(str(path))
+            Gtk.StyleContext.add_provider_for_display(display, provider, prio)
+        except Exception:
+            pass
+
 def css():
-    if LIGHT_GLASS:
-        bg = "rgba(245,245,247,0.82)"
-        fg = "#1d1d1f"
-        sub = "rgba(0,0,0,0.55)"
-        border = "rgba(0,0,0,0.12)"
-        row_hover = "rgba(0,0,0,0.06)"
-        row_sel = "rgba(10,132,255,0.14)"
-        sep = "rgba(0,0,0,0.10)"
+    light = _is_light_mode()
+    if light:
+        bg = "alpha(@bg, 0.82)"
+        fg = "@text"
+        sub = "@subtext"
+        border = "alpha(@border, 0.9)"
+        row_hover = "alpha(@text, 0.06)"
+        row_sel = "alpha(@accent, 0.18)"
+        sep = "alpha(@border, 0.7)"
+        badge_bg = "alpha(@text, 0.10)"
+        card_shadow = "0 12px 30px rgba(0,0,0,0.18)"
     else:
-        bg = "rgba(40,40,44,0.78)"
-        fg = "#f5f5f7"
-        sub = "rgba(255,255,255,0.60)"
-        border = "rgba(255,255,255,0.14)"
-        row_hover = "rgba(255,255,255,0.08)"
-        row_sel = "rgba(10,132,255,0.22)"
-        sep = "rgba(255,255,255,0.10)"
+        bg = "alpha(@bg, 0.78)"
+        fg = "@text"
+        sub = "@subtext"
+        border = "alpha(@border, 0.9)"
+        row_hover = "alpha(@text, 0.08)"
+        row_sel = "alpha(@accent, 0.22)"
+        sep = "alpha(@border, 0.7)"
+        badge_bg = "alpha(@text, 0.14)"
+        card_shadow = "0 14px 34px rgba(0,0,0,0.35)"
     return f"""
     window {{ background: transparent; }}
     .pm-card {{
@@ -234,27 +344,44 @@ def css():
         color: {fg};
         border: 1px solid {border};
         border-radius: {RADIUS}px;
-        padding: 12px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+        padding: 14px;
+        box-shadow: {card_shadow};
     }}
-    .pm-header {{ font-weight: 700; font-size: 15px; }}
+    .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
     .pm-sub {{ color: {sub}; font-size: 12px; }}
-    .pm-sep {{ background: {sep}; min-height: 1px; margin: 6px 0; }}
+    .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 0; }}
     .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 4px 2px; }}
     .pm-row {{
-        border-radius: 10px; padding: 6px 8px; margin: 1px 0;
+        border-radius: 12px; padding: 7px 8px; margin: 2px 0;
         transition: background 120ms ease;
     }}
     .pm-row:hover, .pm-row:focus {{ background: {row_hover}; outline: none; }}
     .pm-row.selected {{ background: {row_sel}; }}
     .pm-badge {{
         min-width: 22px; min-height: 22px; border-radius: 11px;
-        background: rgba(255,255,255,0.18); color: {fg}; font-size: 12px;
+        background: {badge_bg}; color: {fg}; font-size: 12px; font-weight: 700;
     }}
-    .pm-badge.selected {{ background: #0a84ff; color: #ffffff; }}
+    .pm-badge.selected {{ background: @accent; color: #ffffff; }}
     .pm-disabled {{ opacity: 0.45; }}
     .pm-hint {{ color: {sub}; font-size: 11px; }}
-    button.flat {{ background: transparent; border: none; }}
+    .pm-charge {{
+        background: alpha(@text, 0.04);
+        border: 1px solid {sep};
+        border-radius: 12px;
+        padding: 8px;
+        margin-top: 4px;
+    }}
+    .pm-preset {{
+        border-radius: 10px;
+        padding: 4px 10px;
+        background: alpha(@text, 0.06);
+        border: 1px solid {sep};
+    }}
+    .pm-preset:hover {{ background: {row_hover}; }}
+    scale trough {{ border-radius: 999px; min-height: 6px; background: alpha(@text, 0.12); }}
+    scale highlight {{ border-radius: 999px; min-height: 6px; background: @accent; }}
+    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: @text; }}
+    button.flat {{ background: transparent; border: none; box-shadow: none; }}
     """
 
 
@@ -313,7 +440,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
     def build_ui(self):
         # Header: "Battery" + percentage
         hdr = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        t = Gtk.Label(label="Battery", xalign=0)
+        t = Gtk.Label(label=L["battery"], xalign=0)
         t.add_css_class("pm-header")
         t.set_hexpand(True)
         hdr.append(t)
@@ -322,12 +449,12 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         hdr.append(self.pct_label)
         self.card.append(hdr)
 
-        self.source_label = Gtk.Label(label="Power Source: —", xalign=0)
+        self.source_label = Gtk.Label(label=f"{L['power_source']}: —", xalign=0)
         self.source_label.add_css_class("pm-sub")
         self.card.append(self.source_label)
 
         self.sep()
-        sec = Gtk.Label(label="Energy Mode", xalign=0)
+        sec = Gtk.Label(label=L["energy_mode"], xalign=0)
         sec.add_css_class("pm-section")
         self.card.append(sec)
 
@@ -335,10 +462,10 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.card.append(self.modes_box)
         for mode, label, icon in (
-            ("automatic", "Automatic", "A"),
-            ("low", "Low Power", "L"),
-            ("high", "High Power", "H"),
-            ("gaming", "Gaming", "G"),
+            ("automatic", L["automatic"], "A"),
+            ("low", L["low"], "L"),
+            ("high", L["high"], "H"),
+            ("gaming", L["gaming"], "G"),
         ):
             row = self.make_mode_row(mode, label, icon)
             self.modes_box.append(row)
@@ -348,56 +475,52 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.card.append(self.gaming_hint)
 
         self.sep()
-        self.energy_label = Gtk.Label(label="No Apps Using Significant Energy", xalign=0)
+        self.energy_label = Gtk.Label(label=L["no_apps"], xalign=0)
         self.energy_label.add_css_class("pm-sub")
         self.energy_label.set_wrap(True)
         self.card.append(self.energy_label)
 
         self.sep()
-        # Battery Settings… row
-        bs = Gtk.Button()
-        bs.add_css_class("flat")
-        bs_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
-        l = Gtk.Label(label="Battery Settings…", xalign=0)
-        l.set_hexpand(True)
-        bs_row.append(l)
-        bs_row.append(Gtk.Label(label="›"))
-        bs.set_child(bs_row)
-        bs.connect("clicked", lambda *_: self.toggle_charge_panel())
-        self.card.append(bs)
-
-        # Inline charge limit panel (hidden by default)
+        sec_b = Gtk.Label(label=L["battery_settings"], xalign=0)
+        sec_b.add_css_class("pm-section")
+        self.card.append(sec_b)
+        # Inline charge limit panel (always visible so slider is obvious)
         self.charge_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.charge_panel.set_visible(False)
-        self.charge_panel.set_margin_top(4)
+        self.charge_panel.add_css_class("pm-charge")
         self.card.append(self.charge_panel)
         self.build_charge_panel()
 
     def build_charge_panel(self):
-        lab = Gtk.Label(label="Charge limit", xalign=0)
-        lab.add_css_class("pm-sub")
-        self.charge_panel.append(lab)
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        self.charge_title = Gtk.Label(label=L["charge_limit"], xalign=0)
+        self.charge_title.add_css_class("pm-sub")
+        self.charge_title.set_hexpand(True)
+        top.append(self.charge_title)
+        self.charge_value = Gtk.Label(label="--%", xalign=1)
+        self.charge_value.add_css_class("pm-sub")
+        top.append(self.charge_value)
+        self.charge_panel.append(top)
+        # Slider 20-100 (always visible)
+        adj = Gtk.Adjustment(value=get_charge_limit() or 100, lower=20, upper=100, step_increment=1, page_increment=5)
+        self.charge_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj)
+        self.charge_scale.set_digits(0)
+        self.charge_scale.set_draw_value(False)
+        self.charge_scale.set_hexpand(True)
+        self.charge_scale.connect("value-changed", self.on_charge_slider)
+        self.charge_panel.append(self.charge_scale)
         # Presets 60/80/100
         presets = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        presets.set_halign(Gtk.Align.CENTER)
         for val in (60, 80, 100):
             b = Gtk.Button(label=f"{val}%")
+            b.add_css_class("pm-preset")
             b.connect("clicked", lambda _b, v=val: self.set_charge_limit(v))
             presets.append(b)
         self.charge_panel.append(presets)
-        # Slider 20-100
-        adj = Gtk.Adjustment(value=100, lower=20, upper=100, step_increment=1, page_increment=5)
-        self.charge_scale = Gtk.Scale(orientation=Gtk.Orientation.HORIZONTAL, adjustment=adj)
-        self.charge_scale.set_digits(0)
-        self.charge_scale.set_draw_value(True)
-        self.charge_scale.connect("value-changed", self.on_charge_slider)
-        self.charge_panel.append(self.charge_scale)
         self.charge_msg = Gtk.Label(label="", xalign=0)
         self.charge_msg.add_css_class("pm-hint")
         self.charge_panel.append(self.charge_msg)
         self._charge_apply_source = None
-
-    def toggle_charge_panel(self):
-        self.charge_panel.set_visible(not self.charge_panel.get_visible())
 
     def make_mode_row(self, mode, label, icon):
         btn = Gtk.Button()
@@ -447,7 +570,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
     def select_mode(self, mode):
         on_ac = is_on_ac()
         if mode == "gaming" and not on_ac:
-            notify("Gaming mode", "Connect the power adapter")
+            notify(L["notif_gaming_title"], L["notif_gaming_body"])
             return
         prev = self.selected_mode
         save_mode(mode)
@@ -460,7 +583,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
             save_mode(prev)
             self.selected_mode = prev
             self.update_mode_rows()
-            notify("Gaming mode", "Connect the power adapter")
+            notify(L["notif_gaming_title"], L["notif_gaming_body"])
             return
         # Manage hypridle inhibition for gaming (user session, no root)
         if mode == "gaming":
@@ -504,12 +627,15 @@ class PowerModeMenu(Gtk.ApplicationWindow):
                 pass
 
     def set_charge_limit(self, value):
-        rc, out, err = run_helper(["charge-limit", str(int(value))], dry_run=self.dry_run)
+        value = int(value)
+        self.charge_scale.set_value(value)
+        self.charge_value.set_text(f"{value}%")
+        rc, out, err = run_helper(["charge-limit", str(value)], dry_run=self.dry_run)
         if rc == 0:
-            self.charge_msg.set_text(f"Applied: {int(value)}%" + (" (dry-run)" if self.dry_run else ""))
+            self.charge_msg.set_text(f"{L['applied']}: {value}%" + (f" ({L['dry_run']})" if self.dry_run else ""))
         else:
             detail = (err or out or "error").strip().splitlines()[0]
-            self.charge_msg.set_text(f"Error: {detail}")
+            self.charge_msg.set_text(f"{L['error']}: {detail}")
         GLib.timeout_add(600, self.refresh_charge_limit_ui)
 
     def on_charge_slider(self, scale):
@@ -525,12 +651,13 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         val = get_charge_limit()
         if val is not None:
             self.charge_scale.set_value(val)
+            self.charge_value.set_text(f"{int(val)}%")
         return False
 
     def refresh_all(self):
         cap = get_capacity()
         self.pct_label.set_text(f"{cap}%" if cap is not None else "--%")
-        self.source_label.set_text(f"Power Source: {get_power_source_label()}")
+        self.source_label.set_text(f"{L['power_source']}: {get_power_source_label()}")
         self.update_mode_rows()
         self.refresh_energy()
         self.refresh_charge_limit_ui()
@@ -542,7 +669,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         on_ac = is_on_ac()
         # Auto-fallback: if gaming active but unplugged, fall back to automatic
         if self.selected_mode == "gaming" and not on_ac:
-            notify("Power mode", "Charger unplugged: switched to Automatic")
+            notify(L["notif_unplug_title"], L["notif_unplug_body"])
             self.select_mode("automatic")
             return False
         # Automatic mode: reapply when AC state changes (EPP/ASPM/maxfreq + idle profile)
@@ -564,16 +691,16 @@ class PowerModeMenu(Gtk.ApplicationWindow):
             btn.set_sensitive(not disabled)
             row.remove_css_class("pm-disabled") if not disabled else row.add_css_class("pm-disabled")
         if not on_ac:
-            self.gaming_hint.set_text("Gaming: Connect the power adapter")
+            self.gaming_hint.set_text(L["gaming_hint"])
         else:
             self.gaming_hint.set_text("")
 
     def refresh_energy(self):
         name = top_energy_process()
         if name:
-            self.energy_label.set_text(f"Apps Using Significant Energy: {name}")
+            self.energy_label.set_text(f"{L['apps_using']}: {name}")
         else:
-            self.energy_label.set_text("No Apps Using Significant Energy")
+            self.energy_label.set_text(L["no_apps"])
 
 
 class App(Gtk.Application):
@@ -609,7 +736,8 @@ def main():
     if args.status:
         print_status()
         return 0
-    # Load CSS
+    # Load theme/base CSS then popup-specific CSS
+    load_theme_css()
     provider = Gtk.CssProvider()
     provider.load_from_data(css().encode("utf-8"))
     Gtk.StyleContext.add_provider_for_display(
