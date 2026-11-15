@@ -348,6 +348,8 @@ def css():
         border: none;
         border-radius: 0;
         box-shadow: none;
+        min-width: 0;
+        min-height: 0;
     }}
     .pm-card {{
         background: {bg};
@@ -356,14 +358,15 @@ def css():
         border: 1px solid {border};
         border-radius: {RADIUS}px;
         padding: 12px;
+        margin: 0;
         box-shadow: {card_shadow};
     }}
     .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
     .pm-sub {{ color: {sub}; font-size: 12px; }}
-    .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 0; }}
-    .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 6px 2px 4px 2px; letter-spacing: 0.5px; }}
+    .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 2px; }}
+    .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 4px 6px 2px 6px; letter-spacing: 0.2px; }}
 
-    /* Mode rows: reset GTK button chrome; only inner row background changes */
+    /* Flat rows on card (no inner bordered cards) */
     button.pm-mode,
     button.pm-mode:hover,
     button.pm-mode:active,
@@ -385,23 +388,20 @@ def css():
         border-radius: 12px;
     }}
     .pm-row {{
+        background: transparent;
+        border: none;
         border-radius: 12px;
-        padding: 8px 10px;
-        min-height: 30px;
-        transition: background-color 120ms ease, border-color 120ms ease;
-    }}
-    .pm-row.setting-row {{
-        background-color: @surface;
-        border: 1px solid @border;
+        padding: 6px 8px;
+        min-height: 32px;
+        transition: background-color 120ms ease;
     }}
     button.pm-mode:hover .pm-row,
     button.pm-mode:focus .pm-row,
     button.pm-mode:focus-visible .pm-row {{
-        background-color: alpha(@text, 0.10);
+        background-color: alpha(@text, 0.12);
     }}
     .pm-row.selected {{
         background-color: {row_sel};
-        border-color: alpha(@accent, 0.40);
     }}
     button.pm-mode:hover .pm-row.selected,
     button.pm-mode:focus .pm-row.selected {{
@@ -413,7 +413,7 @@ def css():
     }}
     .pm-badge.selected {{ background: @accent; color: #ffffff; }}
     .pm-disabled {{ opacity: 0.45; }}
-    .pm-hint {{ color: {sub}; font-size: 11px; }}
+    .pm-hint {{ color: {sub}; font-size: 11px; margin: 0 6px; }}
 
     /* Battery Settings toggle row */
     button.pm-toggle,
@@ -434,40 +434,36 @@ def css():
         border-radius: 12px;
     }}
     .pm-toggle-row {{
+        background: transparent;
+        border: none;
         border-radius: 12px;
-        padding: 10px 12px;
-        transition: background-color 120ms ease, border-color 120ms ease;
-    }}
-    .pm-toggle-row.setting-row {{
-        background-color: @surface;
-        border: 1px solid @border;
+        padding: 8px 10px;
+        transition: background-color 120ms ease;
     }}
     button.pm-toggle:hover .pm-toggle-row,
     button.pm-toggle:focus .pm-toggle-row {{
-        background-color: alpha(@text, 0.10);
+        background-color: alpha(@text, 0.12);
     }}
     .pm-chevron {{ color: {sub}; font-size: 14px; font-weight: 600; }}
 
     .pm-charge {{
-        margin-top: 6px;
-    }}
-    .pm-charge.setting-row {{
-        padding: 10px 12px;
+        margin-top: 4px;
+        padding: 8px 6px 4px 6px;
     }}
     /* Presets: flat action buttons */
     button.pm-preset {{
         min-height: 0;
         padding: 4px 12px;
-        background-color: transparent;
+        background-color: alpha(@text, 0.06);
         background-image: none;
-        border: 1px solid @border;
+        border: 1px solid {sep};
         border-radius: 10px;
         color: @text;
         box-shadow: none;
         text-shadow: none;
     }}
     button.pm-preset:hover {{
-        background-color: alpha(@text, 0.10);
+        background-color: alpha(@text, 0.12);
         border-color: alpha(@accent, 0.5);
     }}
     button.pm-preset:active {{
@@ -503,13 +499,15 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.set_decorated(False)
         self.add_css_class("powermodemenu-window")
         # Compact popup: ~300px wide, height sized to content (anchored TOP+RIGHT only)
-        self.set_default_size(300, -1)
+        LayerShell.set_exclusive_zone(self, 0)
 
         # Card (single floating panel)
-        self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.card.add_css_class("pm-card")
         self.card.set_hexpand(False)
         self.card.set_vexpand(False)
+        self.card.set_halign(Gtk.Align.END)
+        self.card.set_valign(Gtk.Align.START)
         self.card.set_size_request(300, -1)
         self.set_child(self.card)
 
@@ -562,7 +560,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.card.append(sec)
 
         # Mode rows
-        self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.card.append(self.modes_box)
         for mode, label, icon in (
             ("automatic", L["automatic"], "A"),
@@ -594,7 +592,6 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         toggle_btn.add_css_class("pm-toggle")
         toggle_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         toggle_row.add_css_class("pm-toggle-row")
-        toggle_row.add_css_class("setting-row")
         tlabel = Gtk.Label(label=L["battery_settings"], xalign=0)
         tlabel.set_hexpand(True)
         toggle_row.append(tlabel)
@@ -607,7 +604,6 @@ class PowerModeMenu(Gtk.ApplicationWindow):
 
         self.charge_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.charge_panel.add_css_class("pm-charge")
-        self.charge_panel.add_css_class("setting-row")
         self.build_charge_panel()
         self.charge_revealer.set_child(self.charge_panel)
         self.card.append(self.charge_revealer)
@@ -657,7 +653,6 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         btn.add_css_class("pm-mode")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.add_css_class("pm-row")
-        row.add_css_class("setting-row")
         badge = Gtk.Label(label=icon)
         badge.add_css_class("pm-badge")
         badge.set_size_request(32, 32)
