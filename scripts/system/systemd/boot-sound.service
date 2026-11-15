@@ -1,0 +1,11 @@
+[Unit]
+Description=Boot sound (ReactOS)
+After=sound.target alsa-restore.service
+Before=plymouth-quit.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/aplay -q /usr/local/share/sounds/reactos-boot.wav
+
+[Install]
+WantedBy=sysinit.target

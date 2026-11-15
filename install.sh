@@ -16,7 +16,7 @@
 #
 # Usage:
 #   ./install.sh [--dry-run] [--yes] [--verbose] [--allow-nonstandard]
-#                [--with-session] [--with-fonts] [--with-sddm]
+#                [--with-session] [--with-fonts] [--with-sddm] [--with-boot-sound]
 #                [--install-deps] [--install-desktop-deps] [--install-sddm-deps]
 #   ./install.sh --help
 #
@@ -42,6 +42,7 @@ ALLOW_NONSTANDARD=0
 WITH_SESSION=0
 WITH_FONTS=0
 WITH_SDDM=0
+WITH_BOOT_SOUND=0
 INSTALL_DEPS=0
 INSTALL_DESKTOP_DEPS=0
 INSTALL_SDDM_DEPS=0
@@ -139,6 +140,10 @@ Flags:
   --with-sddm            Install/update the Glasshouse SDDM theme with
                          sddm-install. This edits /etc/sddm.conf and SDDM theme
                          files. SDDM is never restarted.
+  --with-boot-sound      Install the ReactOS boot sound (system-wide, sudo):
+                         copies reactos-boot.wav to /usr/local/share/sounds/,
+                         installs /etc/systemd/system/boot-sound.service and
+                         enables it. Requires alsa-utils (aplay).
   --install-deps         Install missing required Arch packages with pacman.
   --install-desktop-deps Install the optional Arch desktop dependency profile
                          with pacman (opt-in; no AUR/paru, no pacman -Sy).
@@ -181,7 +186,9 @@ Privileged steps and risks:
   SDDM is never restarted by this installer. The Glasshouse SDDM theme uses
   QtQuick 2.15 / QtQuick.Controls 2.15 / QtGraphicalEffects 1.0; Qt5/Qt6
   greeter packaging can be ambiguous across setups, so use --install-sddm-deps
-  only when it matches your SDDM/greeter stack.
+  only when it matches your SDDM/greeter stack. --with-boot-sound copies the
+  sound to /usr/local/share/sounds/ and installs/enables a systemd system
+  service in /etc/systemd/system (sudo).
 
 Package installation:
   --install-deps installs missing required Arch packages. --install-desktop-deps
@@ -199,6 +206,7 @@ Examples:
   ./install.sh --yes --with-session
   ./install.sh --yes --install-sddm-deps --with-sddm
   ./install.sh --yes --with-fonts --with-sddm
+  ./install.sh --yes --with-boot-sound
 EOF
 }
 
@@ -212,6 +220,7 @@ parse_args() {
       --with-session) WITH_SESSION=1 ;;
       --with-fonts) WITH_FONTS=1 ;;
       --with-sddm) WITH_SDDM=1 ;;
+      --with-boot-sound) WITH_BOOT_SOUND=1 ;;
       --install-deps) INSTALL_DEPS=1 ;;
       --install-desktop-deps) INSTALL_DESKTOP_DEPS=1 ;;
       --install-sddm-deps) INSTALL_SDDM_DEPS=1 ;;
@@ -1042,6 +1051,64 @@ install_sddm() {
   fi
 }
 
+install_boot_sound() {
+  log "Installing boot sound (sudo): copies sound and enables systemd system service"
+
+  local src="$REPO/reactos-boot.wav"
+  local service_src="$REPO/scripts/system/systemd/boot-sound.service"
+  local dest_sound="/usr/local/share/sounds/reactos-boot.wav"
+  local dest_service="/etc/systemd/system/boot-sound.service"
+
+  if [[ ! -f "$src" ]]; then
+    error "Boot sound not found in repo: $src"
+    return 0
+  fi
+  if [[ ! -f "$service_src" ]]; then
+    error "Boot sound service file not found: $service_src"
+    return 0
+  fi
+  if ! command -v aplay >/dev/null 2>&1; then
+    warn "aplay (alsa-utils) not found. Install it first (e.g. sudo pacman -S alsa-utils) or use --install-deps if provided."
+  fi
+
+  if (( DRY_RUN )); then
+    log "[dry-run] sudo mkdir -p /usr/local/share/sounds"
+    log "[dry-run] sudo install -m 644 $src $dest_sound"
+    log "[dry-run] sudo install -m 644 $service_src $dest_service"
+    log "[dry-run] sudo systemctl daemon-reload"
+    log "[dry-run] sudo systemctl enable boot-sound.service"
+    return 0
+  fi
+
+  warn "Boot sound install copies $dest_sound and installs/enables $dest_service (sudo)."
+  if ! confirm "Continue with boot sound installation?"; then
+    warn "Skipped boot sound installation"
+    return 0
+  fi
+
+  if ! sudo mkdir -p /usr/local/share/sounds; then
+    error "Could not create /usr/local/share/sounds"
+    return 0
+  fi
+  if ! sudo install -m 644 "$src" "$dest_sound"; then
+    error "Could not install $dest_sound"
+    return 0
+  fi
+  if ! sudo install -m 644 "$service_src" "$dest_service"; then
+    error "Could not install $dest_service"
+    return 0
+  fi
+  if ! sudo systemctl daemon-reload; then
+    error "systemctl daemon-reload failed for boot sound"
+    return 0
+  fi
+  if ! sudo systemctl enable boot-sound.service; then
+    error "Could not enable boot-sound.service"
+    return 0
+  fi
+  ok "Boot sound installed and enabled (boot-sound.service). Reboot to hear it."
+}
+
 validate_bash_scripts() {
   log "Validating bash scripts"
   local files=("$REPO/install.sh")
@@ -1320,6 +1387,9 @@ main() {
   fi
   if (( WITH_SDDM )); then
     install_sddm
+  fi
+  if (( WITH_BOOT_SOUND )); then
+    install_boot_sound
   fi
 
   validate_all
