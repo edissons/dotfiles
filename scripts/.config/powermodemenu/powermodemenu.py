@@ -301,17 +301,13 @@ def load_theme_css():
     display = Gdk.Display.get_default()
     if not display:
         return
-    # Base theme tokens (colors) used across Glasshouse panels
-    for path, prio in [
-        (Path.home() / ".config/theme/current.css", Gtk.STYLE_PROVIDER_PRIORITY_USER),
-        (Path.home() / "dotfiles/waybar/.config/waybar/settings.css", Gtk.STYLE_PROVIDER_PRIORITY_USER + 1),
-    ]:
-        if not path.is_file():
-            continue
+    # Theme tokens (colors) only - avoid loading settings.css global widget rules in popup
+    p = Path.home() / ".config/theme/current.css"
+    if p.is_file():
         provider = Gtk.CssProvider()
         try:
-            provider.load_from_path(str(path))
-            Gtk.StyleContext.add_provider_for_display(display, provider, prio)
+            provider.load_from_path(str(p))
+            Gtk.StyleContext.add_provider_for_display(display, provider, Gtk.STYLE_PROVIDER_PRIORITY_USER)
         except Exception:
             pass
 
@@ -357,22 +353,16 @@ def css():
         color: {fg};
         border: 1px solid {border};
         border-radius: {RADIUS}px;
-        padding: 12px;
+        padding: 10px;
         margin: 0;
-        box-shadow: {card_shadow};
     }}
     .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
     .pm-sub {{ color: {sub}; font-size: 12px; }}
-    .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 2px; }}
+    .pm-sep {{ background: {sep}; min-height: 1px; margin: 6px 0; }}
     .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 4px 6px 2px 6px; letter-spacing: 0.2px; }}
 
     /* Flat rows on card (no inner bordered cards) */
-    button.pm-mode,
-    button.pm-mode:hover,
-    button.pm-mode:active,
-    button.pm-mode:checked,
-    button.pm-mode:focus,
-    button.pm-mode:focus-visible {{
+    button.pm-mode {{
         background: none;
         background-image: none;
         background-color: transparent;
@@ -381,46 +371,39 @@ def css():
         -gtk-icon-shadow: none;
         border: none;
         outline: none;
-        padding: 0;
         margin: 0;
-        min-height: 0;
-        min-width: 0;
+        padding: 0 8px;
+        min-height: 44px;
         border-radius: 12px;
+        transition: background-color 120ms ease;
+    }}
+    button.pm-mode:hover,
+    button.pm-mode:focus,
+    button.pm-mode:focus-visible {{
+        background-color: alpha(@text, 0.12);
+    }}
+    button.pm-mode.selected,
+    button.pm-mode.selected:hover,
+    button.pm-mode.selected:focus {{
+        background-color: {row_sel};
     }}
     .pm-row {{
         background: transparent;
         border: none;
-        border-radius: 12px;
-        padding: 6px 8px;
-        min-height: 32px;
-        transition: background-color 120ms ease;
-    }}
-    button.pm-mode:hover .pm-row,
-    button.pm-mode:focus .pm-row,
-    button.pm-mode:focus-visible .pm-row {{
-        background-color: alpha(@text, 0.12);
-    }}
-    .pm-row.selected {{
-        background-color: {row_sel};
-    }}
-    button.pm-mode:hover .pm-row.selected,
-    button.pm-mode:focus .pm-row.selected {{
-        background-color: {row_sel};
+        padding: 0;
+        margin: 0;
+        min-height: 0;
     }}
     .pm-badge {{
         min-width: 32px; min-height: 32px; border-radius: 16px;
         background: alpha(@text, 0.14); color: {fg}; font-size: 13px; font-weight: 700;
     }}
     .pm-badge.selected {{ background: @accent; color: #ffffff; }}
-    .pm-disabled {{ opacity: 0.45; }}
+    button.pm-disabled {{ opacity: 0.45; }}
     .pm-hint {{ color: {sub}; font-size: 11px; margin: 0 6px; }}
 
     /* Battery Settings toggle row */
-    button.pm-toggle,
-    button.pm-toggle:hover,
-    button.pm-toggle:active,
-    button.pm-toggle:focus,
-    button.pm-toggle:focus-visible {{
+    button.pm-toggle {{
         background: none;
         background-image: none;
         background-color: transparent;
@@ -428,27 +411,27 @@ def css():
         text-shadow: none;
         border: none;
         outline: none;
-        padding: 0;
+        padding: 0 8px;
         margin: 0;
-        min-height: 0;
+        min-height: 44px;
         border-radius: 12px;
+        transition: background-color 120ms ease;
+    }}
+    button.pm-toggle:hover,
+    button.pm-toggle:focus {{
+        background-color: alpha(@text, 0.12);
     }}
     .pm-toggle-row {{
         background: transparent;
         border: none;
-        border-radius: 12px;
-        padding: 8px 10px;
-        transition: background-color 120ms ease;
-    }}
-    button.pm-toggle:hover .pm-toggle-row,
-    button.pm-toggle:focus .pm-toggle-row {{
-        background-color: alpha(@text, 0.12);
+        padding: 0;
+        margin: 0;
     }}
     .pm-chevron {{ color: {sub}; font-size: 14px; font-weight: 600; }}
 
     .pm-charge {{
-        margin-top: 4px;
-        padding: 8px 6px 4px 6px;
+        margin: 0;
+        padding: 6px 8px 4px 8px;
     }}
     /* Presets: flat action buttons */
     button.pm-preset {{
@@ -497,6 +480,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         LayerShell.set_margin(self, LayerShell.Edge.RIGHT, MARGIN_RIGHT)
 
         self.set_decorated(False)
+        self.set_resizable(False)
         self.add_css_class("powermodemenu-window")
         # Compact popup: ~300px wide, height sized to content (anchored TOP+RIGHT only)
         LayerShell.set_exclusive_zone(self, 0)
@@ -587,6 +571,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.charge_revealer.set_reveal_child(False)  # collapsed by default
 
         toggle_btn = Gtk.Button()
+        toggle_btn.set_has_frame(False)
         toggle_btn.add_css_class("pm-toggle")
         toggle_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         toggle_row.add_css_class("pm-toggle-row")
@@ -648,6 +633,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
 
     def make_mode_row(self, mode, label, icon):
         btn = Gtk.Button()
+        btn.set_has_frame(False)
         btn.add_css_class("pm-mode")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.add_css_class("pm-row")
@@ -809,11 +795,18 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         on_ac = is_on_ac()
         for mode, (btn, row, badge) in self.rows.items():
             selected = (mode == self.selected_mode)
-            row.remove_css_class("selected") if not selected else row.add_css_class("selected")
-            badge.remove_css_class("selected") if not selected else badge.add_css_class("selected")
+            if selected:
+                btn.add_css_class("selected")
+                badge.add_css_class("selected")
+            else:
+                btn.remove_css_class("selected")
+                badge.remove_css_class("selected")
             disabled = (mode == "gaming" and not on_ac)
             btn.set_sensitive(not disabled)
-            row.remove_css_class("pm-disabled") if not disabled else row.add_css_class("pm-disabled")
+            if disabled:
+                btn.add_css_class("pm-disabled")
+            else:
+                btn.remove_css_class("pm-disabled")
         if not on_ac:
             self.gaming_hint.set_text(L["gaming_hint"])
         else:
