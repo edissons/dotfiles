@@ -1052,12 +1052,19 @@ install_sddm() {
 }
 
 install_boot_sound() {
-  log "Installing boot sound (sudo): copies sound and enables systemd system service"
+  log "Installing boot/shutdown sounds (sudo): copies sounds and enables systemd system services"
 
   local src="$REPO/reactos-boot.wav"
   local service_src="$REPO/scripts/system/systemd/boot-sound.service"
   local dest_sound="/usr/local/share/sounds/reactos-boot.wav"
   local dest_service="/etc/systemd/system/boot-sound.service"
+
+  local shutdown_src="$REPO/shutdown.wav"
+  local shutdown_service_src="$REPO/scripts/system/systemd/shutdown-sound.service"
+  local dest_shutdown="/usr/local/share/sounds/shutdown.wav"
+  local dest_shutdown_service="/etc/systemd/system/shutdown-sound.service"
+  local have_shutdown=0
+  [[ -f "$shutdown_src" && -f "$shutdown_service_src" ]] && have_shutdown=1
 
   if [[ ! -f "$src" ]]; then
     error "Boot sound not found in repo: $src"
@@ -1075,14 +1082,23 @@ install_boot_sound() {
     log "[dry-run] sudo mkdir -p /usr/local/share/sounds"
     log "[dry-run] sudo install -m 644 $src $dest_sound"
     log "[dry-run] sudo install -m 644 $service_src $dest_service"
+    if (( have_shutdown )); then
+      log "[dry-run] sudo install -m 644 $shutdown_src $dest_shutdown"
+      log "[dry-run] sudo install -m 644 $shutdown_service_src $dest_shutdown_service"
+    fi
     log "[dry-run] sudo systemctl daemon-reload"
     log "[dry-run] sudo systemctl enable boot-sound.service"
+    (( have_shutdown )) && log "[dry-run] sudo systemctl enable shutdown-sound.service"
     return 0
   fi
 
-  warn "Boot sound install copies $dest_sound and installs/enables $dest_service (sudo)."
-  if ! confirm "Continue with boot sound installation?"; then
-    warn "Skipped boot sound installation"
+  if (( have_shutdown )); then
+    warn "Sound install copies boot/shutdown sounds and installs/enables boot-sound.service and shutdown-sound.service (sudo)."
+  else
+    warn "Boot sound install copies $dest_sound and installs/enables $dest_service (sudo)."
+  fi
+  if ! confirm "Continue with sound installation?"; then
+    warn "Skipped sound installation"
     return 0
   fi
 
@@ -1098,15 +1114,33 @@ install_boot_sound() {
     error "Could not install $dest_service"
     return 0
   fi
+  if (( have_shutdown )); then
+    if ! sudo install -m 644 "$shutdown_src" "$dest_shutdown"; then
+      error "Could not install $dest_shutdown"
+      return 0
+    fi
+    if ! sudo install -m 644 "$shutdown_service_src" "$dest_shutdown_service"; then
+      error "Could not install $dest_shutdown_service"
+      return 0
+    fi
+  fi
   if ! sudo systemctl daemon-reload; then
-    error "systemctl daemon-reload failed for boot sound"
+    error "systemctl daemon-reload failed for sound services"
     return 0
   fi
   if ! sudo systemctl enable boot-sound.service; then
     error "Could not enable boot-sound.service"
     return 0
   fi
-  ok "Boot sound installed and enabled (boot-sound.service). Reboot to hear it."
+  if (( have_shutdown )); then
+    if ! sudo systemctl enable shutdown-sound.service; then
+      error "Could not enable shutdown-sound.service"
+      return 0
+    fi
+    ok "Boot and shutdown sounds installed and enabled (boot-sound.service, shutdown-sound.service). Reboot to hear boot sound; shutdown sound plays on poweroff/reboot."
+  else
+    ok "Boot sound installed and enabled (boot-sound.service). Reboot to hear it."
+  fi
 }
 
 validate_bash_scripts() {
