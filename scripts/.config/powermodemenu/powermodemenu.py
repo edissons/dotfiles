@@ -350,13 +350,23 @@ def css():
     .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
     .pm-sub {{ color: {sub}; font-size: 12px; }}
     .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 0; }}
-    .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 4px 2px; }}
+    .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 6px 2px 4px 2px; letter-spacing: 0.5px; }}
+    /* Mode rows: match Glasshouse .setting-row aesthetic */
     .pm-row {{
-        border-radius: 12px; padding: 7px 8px; margin: 2px 0;
-        transition: background 120ms ease;
+        transition: background-color 140ms ease, border-color 140ms ease;
     }}
-    .pm-row:hover, .pm-row:focus {{ background: {row_hover}; outline: none; }}
-    .pm-row.selected {{ background: {row_sel}; }}
+    .pm-row.setting-row {{
+        padding: 10px 12px;
+    }}
+    .pm-row:hover, .pm-row:focus {{
+        background: alpha(@accent, 0.08);
+        border-color: alpha(@accent, 0.35);
+        outline: none;
+    }}
+    .pm-row.selected {{
+        background: {row_sel};
+        border-color: alpha(@accent, 0.45);
+    }}
     .pm-badge {{
         min-width: 22px; min-height: 22px; border-radius: 11px;
         background: {badge_bg}; color: {fg}; font-size: 12px; font-weight: 700;
@@ -365,19 +375,29 @@ def css():
     .pm-disabled {{ opacity: 0.45; }}
     .pm-hint {{ color: {sub}; font-size: 11px; }}
     .pm-charge {{
-        background: alpha(@text, 0.04);
-        border: 1px solid {sep};
-        border-radius: 12px;
-        padding: 8px;
-        margin-top: 4px;
+        margin-top: 2px;
     }}
-    .pm-preset {{
+    .pm-charge.setting-row {{
+        padding: 10px 12px;
+    }}
+    /* Presets: match .action-button aesthetic */
+    button.pm-preset {{
+        min-height: 0;
+        padding: 4px 12px;
+        background-color: transparent;
+        background-image: none;
+        border: 1px solid @border;
         border-radius: 10px;
-        padding: 4px 10px;
-        background: alpha(@text, 0.06);
-        border: 1px solid {sep};
+        color: @text;
+        box-shadow: none;
     }}
-    .pm-preset:hover {{ background: {row_hover}; }}
+    button.pm-preset:hover {{
+        background-color: @surface;
+        border-color: alpha(@accent, 0.5);
+    }}
+    button.pm-preset:active {{
+        background-color: @border;
+    }}
     scale trough {{ border-radius: 999px; min-height: 6px; background: alpha(@text, 0.12); }}
     scale highlight {{ border-radius: 999px; min-height: 6px; background: @accent; }}
     scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: @text; }}
@@ -459,7 +479,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.card.append(sec)
 
         # Mode rows
-        self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        self.modes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.card.append(self.modes_box)
         for mode, label, icon in (
             ("automatic", L["automatic"], "A"),
@@ -485,8 +505,9 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         sec_b.add_css_class("pm-section")
         self.card.append(sec_b)
         # Inline charge limit panel (always visible so slider is obvious)
-        self.charge_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.charge_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.charge_panel.add_css_class("pm-charge")
+        self.charge_panel.add_css_class("setting-row")
         self.card.append(self.charge_panel)
         self.build_charge_panel()
 
@@ -527,6 +548,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         btn.add_css_class("flat")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.add_css_class("pm-row")
+        row.add_css_class("setting-row")
         badge = Gtk.Label(label=icon)
         badge.add_css_class("pm-badge")
         badge.set_size_request(22, 22)
