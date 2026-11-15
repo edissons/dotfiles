@@ -5,6 +5,7 @@ A="$HOME/.local/bin/appearance"
 CACHE="$HOME/.cache/current-wallpaper"
 LOCK="${XDG_RUNTIME_DIR:-/tmp}/wallpaper-carousel.lock"
 IDX="$HOME/.cache/wallpaper-carousel.index"
+SKIP_INITIAL="$HOME/.cache/wallpaper-carousel.skip-initial-tick"
 SERVICE="wallpaper-carousel.service"
 
 get_cfg() { "$A" get "$1" "$2"; }
@@ -151,9 +152,12 @@ next_forced() {
 }
 
 run_loop() {
-  # tick inicial tras pequeño delay si hay sesión gráfica
+  # tick inicial tras pequeño delay si hay sesión gráfica.
+  # Si hay marcador de salto (p.ej. reinicio por cambio de intervalo), no cambiar el fondo ahora.
   sleep 2
-  if [ -n "${WAYLAND_DISPLAY:-}" ] && [ "$(get_cfg wallpaper_carousel off)" = "on" ]; then
+  if [ -f "$SKIP_INITIAL" ]; then
+    rm -f "$SKIP_INITIAL" 2>/dev/null || true
+  elif [ -n "${WAYLAND_DISPLAY:-}" ] && [ "$(get_cfg wallpaper_carousel off)" = "on" ]; then
     tick || true
   fi
   while [ "$(get_cfg wallpaper_carousel off)" = "on" ]; do
@@ -220,7 +224,10 @@ set_interval() {
   "$A" set wallpaper_carousel_interval "$min"
   if command -v systemctl >/dev/null 2>&1 && \
      systemctl --user is-active --quiet "$SERVICE" 2>/dev/null; then
-    systemctl --user restart "$SERVICE" 2>/dev/null || true
+    # Reiniciar para aplicar el intervalo sin cambiar el fondo inmediatamente.
+    mkdir -p "$(dirname "$SKIP_INITIAL")"
+    : > "$SKIP_INITIAL"
+    systemctl --user restart "$SERVICE" 2>/dev/null || rm -f "$SKIP_INITIAL" 2>/dev/null || true
   fi
   echo "Intervalo del carrusel: $min min"
 }

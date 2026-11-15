@@ -347,23 +347,9 @@ class SettingsPanel(Gtk.ApplicationWindow):
         value = combo.get_active_id()
         if not value:
             return
-        appearance_set("wallpaper_carousel_interval", value)
-        try:
-            rc = subprocess.run(
-                ["systemctl", "--user", "is-active", "--quiet", "wallpaper-carousel.service"],
-                check=False,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            ).returncode
-            if rc == 0:
-                subprocess.Popen(
-                    ["systemctl", "--user", "restart", "wallpaper-carousel.service"],
-                    start_new_session=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-        except OSError:
-            pass
+        # Usa set-interval para guardar y reiniciar el servicio (si está activo)
+        # sin forzar un cambio inmediato de fondo.
+        run_bg([str(HOME / ".local/bin/wallpaper-carousel"), "set-interval", value])
 
     # --- BLOQUEO E INICIO DE SESIÓN ---
     def lock_bg_row(self):
