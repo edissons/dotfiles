@@ -501,13 +501,11 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         # Compact popup: ~300px wide, height sized to content (anchored TOP+RIGHT only)
         LayerShell.set_exclusive_zone(self, 0)
 
-        # Card (single floating panel)
+        # Card (single floating panel) - window sizes to this card
         self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.card.add_css_class("pm-card")
         self.card.set_hexpand(False)
         self.card.set_vexpand(False)
-        self.card.set_halign(Gtk.Align.END)
-        self.card.set_valign(Gtk.Align.START)
         self.card.set_size_request(300, -1)
         self.set_child(self.card)
 
