@@ -499,14 +499,10 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.refresh_source = GLib.timeout_add_seconds(5, self.refresh_live)
         self.connect("close-request", self.on_close)
 
-        # Close on Escape
+        # Close on Escape (toggle by clicking battery icon again closes via app)
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self.on_key)
         self.add_controller(key)
-        # Close when focus leaves the popup (click outside / switch window)
-        focus = Gtk.EventControllerFocus()
-        focus.connect("leave", lambda *_: self.close())
-        self.add_controller(focus)
 
     def on_close(self, *_):
         if self.refresh_source:
