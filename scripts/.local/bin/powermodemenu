@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
 # Launcher/toggle for the Battery/Power Mode popup (Wayland layer-shell).
 # Single-instance toggle is handled by the app (Gtk.Application id).
+# LD_PRELOAD workaround for gtk4-layer-shell linking (see linking.md in gtk4-layer-shell).
+export LD_PRELOAD="${LD_PRELOAD:+$LD_PRELOAD:}/usr/lib/libgtk4-layer-shell.so"
 exec python3 "$HOME/.config/powermodemenu/powermodemenu.py" "$@"

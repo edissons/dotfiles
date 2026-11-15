@@ -481,7 +481,6 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         LayerShell.set_margin(self, LayerShell.Edge.RIGHT, MARGIN_RIGHT)
 
         self.set_decorated(False)
-        self.set_resizable(False)
         self.add_css_class("powermodemenu-window")
         # Compact popup: ~300px wide, height sized to content (anchored TOP+RIGHT only)
         LayerShell.set_exclusive_zone(self, 0)
