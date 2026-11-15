@@ -19,7 +19,7 @@
     "custom/settings",
     "custom/gaming",
     "custom/notifications",
-    "battery",
+    "custom/battery",
     "custom/power"
   ],
   "disabled": [

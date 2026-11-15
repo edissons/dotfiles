@@ -1,0 +1,5 @@
+# /etc/udev/rules.d/90-powermodemenu.rules
+# Re-apply the selected power mode when AC adapter is plugged/unplugged.
+# Runs the root helper's auto-reapply handler (installed path).
+SUBSYSTEM=="power_supply", ATTR{type}=="Mains", ACTION=="change", \
+  RUN+="/usr/local/lib/powermodemenu/powermodemenu-on-power-change"

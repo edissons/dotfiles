@@ -1,0 +1,354 @@
+#!/usr/bin/env python3
+"""
+powermodemenu helper (root): applies power modes and battery charge limit.
+
+This script is the ONLY component intended to run with elevated privileges
+(via polkit/sudoers). The UI must NOT run as root.
+
+Usage:
+  powermodemenu-helper apply <automatic|low|high|gaming> [--dry-run]
+  powermodemenu-helper charge-limit <20-100> [--dry-run]
+  powermodemenu-helper --status
+
+It validates arguments, checks that sysfs/asusctl/powerprofilesctl paths or
+commands exist before changing anything, skips unavailable controls with a log
+message, and can print actions instead of executing them with --dry-run.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+MODES = ("automatic", "low", "high", "gaming")
+LOG_PREFIX = "powermodemenu-helper"
+
+
+def log(msg):
+    print(f"{LOG_PREFIX}: {msg}", file=sys.stderr)
+
+
+def run(cmd, dry_run=False):
+    """Run a command (list). In dry-run, print it and do not execute."""
+    printable = " ".join(cmd)
+    if dry_run:
+        print(f"[dry-run] {printable}")
+        return 0, "", ""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()
+            log(f"command failed ({r.returncode}): {printable} :: {detail}")
+        return r.returncode, (r.stdout or ""), (r.stderr or "")
+    except Exception as e:
+        log(f"command error: {printable} :: {e}")
+        return 1, "", str(e)
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+
+
+def write_text(path, value, dry_run=False):
+    path = Path(path)
+    if not path.exists():
+        log(f"skip (missing): {path}")
+        return False
+    if dry_run:
+        print(f"[dry-run] write {path} = {value}")
+        return True
+    try:
+        path.write_text(str(value), encoding="utf-8")
+        return True
+    except Exception as e:
+        log(f"skip (write failed {path}): {e}")
+        return False
+
+
+def is_on_ac():
+    # Prefer AC0/ADP*/Mains* online=1; fall back to upower if available.
+    for base in sorted(Path("/sys/class/power_supply").glob("*")):
+        if (base / "online").is_file():
+            name = base.name.upper()
+            if name.startswith(("AC", "ADP", "MAINS")):
+                if read_text(base / "online") == "1":
+                    return True
+    try:
+        out = subprocess.check_output(["upower", "-i", "/org/freedesktop/UPower/devices/line_power_AC0"], text=True, stderr=subprocess.DEVNULL, timeout=5)
+        if "online:" in out:
+            return "yes" in out.split("online:")[-1].splitlines()[0].lower()
+    except Exception:
+        pass
+    return False
+
+
+def available_epp():
+    p = Path("/sys/devices/system/cpu/cpu0/cpufreq/energy_performance_available_preferences")
+    val = read_text(p)
+    return val.split() if val else []
+
+
+def set_epp(pref, dry_run=False):
+    avail = available_epp()
+    if not avail:
+        log("skip EPP: energy_performance_available_preferences not available")
+        return
+    if pref not in avail:
+        log(f"skip EPP '{pref}': not in available preferences {avail}")
+        return
+    for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq/energy_performance_preference")):
+        write_text(cpu, pref, dry_run)
+
+
+def set_boost(enabled, dry_run=False):
+    # Global boost (amd_pstate/cpufreq) - path varies by driver.
+    candidates = [
+        Path("/sys/devices/system/cpu/cpufreq/boost"),
+        Path("/sys/devices/system/cpu/cpu0/cpufreq/boost"),
+    ]
+    val = "1" if enabled else "0"
+    done = False
+    for p in candidates:
+        if p.exists():
+            write_text(p, val, dry_run)
+            done = True
+            break
+    if not done:
+        log("skip boost: no boost control found")
+
+
+def set_max_freq_percent(percent, dry_run=False):
+    # Set scaling_max_freq to percent of cpuinfo_max_freq for each policy.
+    for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq")):
+        maxf = read_text(cpu / "cpuinfo_max_freq")
+        tgt = cpu / "scaling_max_freq"
+        if not maxf or not tgt.exists():
+            continue
+        try:
+            hz = int(int(maxf) * percent / 100)
+            minf = read_text(cpu / "scaling_min_freq")
+            if minf:
+                hz = max(hz, int(minf))
+            write_text(tgt, hz, dry_run)
+        except Exception as e:
+            log(f"skip max freq for {cpu}: {e}")
+
+
+def set_min_freq_percent(percent, dry_run=False):
+    # Raise scaling_min_freq to percent of cpuinfo_max_freq (used by Gaming).
+    for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq")):
+        maxf = read_text(cpu / "cpuinfo_max_freq")
+        tgt = cpu / "scaling_min_freq"
+        if not maxf or not tgt.exists():
+            continue
+        try:
+            hz = int(int(maxf) * percent / 100)
+            hi = read_text(cpu / "scaling_max_freq") or maxf
+            hz = min(hz, int(hi))
+            write_text(tgt, hz, dry_run)
+        except Exception as e:
+            log(f"skip min freq for {cpu}: {e}")
+
+
+def set_aspm(policy, dry_run=False):
+    p = Path("/sys/module/pcie_aspm/parameters/policy")
+    if not p.exists():
+        log("skip ASPM: /sys/module/pcie_aspm/parameters/policy missing")
+        return
+    cur = read_text(p) or ""
+    # policy file often shows "[default] performance powersave ..."; writing name selects it.
+    if policy not in cur and policy not in cur.replace('[','').replace(']','').split():
+        log(f"skip ASPM '{policy}': not listed in '{cur}'")
+        return
+    write_text(p, policy, dry_run)
+
+
+def set_usb_autosuspend(enable, dry_run=False):
+    val = "auto" if enable else "on"
+    found = False
+    for ctl in Path("/sys/bus/usb/devices").glob("*/power/control"):
+        if ctl.exists():
+            write_text(ctl, val, dry_run)
+            found = True
+    if not found:
+        log("skip USB autosuspend: no /sys/bus/usb/devices/*/power/control found")
+
+
+def set_asus_profile(name, dry_run=False):
+    # asusctl profile set <name> (requires asusd). Names vary; check availability.
+    if not shutil.which("asusctl"):
+        log("skip asusctl profile: asusctl not found")
+        return
+    # Try to list profiles to validate name if possible.
+    rc, out, _ = run(["asusctl", "profile", "list"], dry_run=False)
+    if rc == 0 and out.strip():
+        names = [ln.strip().lower() for ln in out.splitlines() if ln.strip()]
+        if names and name.lower() not in " ".join(names):
+            log(f"skip asusctl profile '{name}': not in available profiles {names}")
+            return
+    elif rc != 0:
+        log(f"skip asusctl profile '{name}': cannot query profiles (asusd unavailable?)")
+        return
+    run(["asusctl", "profile", "set", name], dry_run=dry_run)
+
+
+def set_power_profile(profile, dry_run=False):
+    if not shutil.which("powerprofilesctl"):
+        log("skip powerprofilesctl: not found")
+        return
+    run(["powerprofilesctl", "set", profile], dry_run=dry_run)
+
+
+def apply_mode(mode, dry_run=False):
+    on_ac = is_on_ac()
+    log(f"apply mode={mode} on_ac={on_ac} dry_run={dry_run}")
+
+    # Gaming only allowed on AC
+    if mode == "gaming" and not on_ac:
+        log("gaming requested on battery: refusing (UI should prevent this)")
+        print("REFUSED: gaming requires AC")
+        return 2
+
+    if mode == "automatic":
+        set_power_profile("balanced", dry_run)
+        # EPP: balance_performance on AC, balance_power on battery (if available)
+        set_epp("balance_performance" if on_ac else "balance_power", dry_run)
+        set_boost(True, dry_run)
+        set_max_freq_percent(100 if on_ac else 90, dry_run)
+        set_min_freq_percent(0, dry_run)  # 0% -> will clamp to scaling_min; reset via cpuinfo_min
+        # Reset min freq to hardware min
+        for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq")):
+            mn = read_text(cpu / "cpuinfo_min_freq")
+            if mn and (cpu/"scaling_min_freq").exists():
+                write_text(cpu/"scaling_min_freq", mn, dry_run)
+        set_asus_profile("Balanced" if on_ac else "Quiet", dry_run)
+        set_aspm("default" if on_ac else "powersave", dry_run)
+        set_usb_autosuspend(True, dry_run)
+
+    elif mode == "low":
+        set_power_profile("power-saver", dry_run)
+        set_epp("power", dry_run)
+        set_boost(False, dry_run)
+        set_max_freq_percent(70, dry_run)
+        for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq")):
+            mn = read_text(cpu / "cpuinfo_min_freq")
+            if mn and (cpu/"scaling_min_freq").exists():
+                write_text(cpu/"scaling_min_freq", mn, dry_run)
+        set_asus_profile("Quiet", dry_run)
+        set_aspm("powersave", dry_run)
+        set_usb_autosuspend(True, dry_run)
+
+    elif mode == "high":
+        set_power_profile("performance", dry_run)
+        set_epp("performance", dry_run)
+        set_boost(True, dry_run)
+        set_max_freq_percent(100, dry_run)
+        for cpu in sorted(Path("/sys/devices/system/cpu").glob("cpu[0-9]*/cpufreq")):
+            mn = read_text(cpu / "cpuinfo_min_freq")
+            if mn and (cpu/"scaling_min_freq").exists():
+                write_text(cpu/"scaling_min_freq", mn, dry_run)
+        set_asus_profile("Performance", dry_run)
+        set_aspm("performance", dry_run)
+        set_usb_autosuspend(False, dry_run)
+
+    elif mode == "gaming":
+        set_power_profile("performance", dry_run)
+        set_epp("performance", dry_run)
+        set_boost(True, dry_run)
+        set_max_freq_percent(100, dry_run)
+        set_min_freq_percent(50, dry_run)
+        set_asus_profile("Performance", dry_run)
+        set_aspm("performance", dry_run)
+        set_usb_autosuspend(False, dry_run)
+
+    return 0
+
+
+def get_charge_limit():
+    for bat in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+        v = read_text(bat / "charge_control_end_threshold")
+        if v and v.isdigit():
+            return int(v)
+    # fallback asusctl
+    if shutil.which("asusctl"):
+        try:
+            r = subprocess.run(["asusctl", "battery", "info"], capture_output=True, text=True, timeout=10)
+            if r.returncode == 0:
+                m = re.search(r"(\d+)\s*%", r.stdout)
+                if m:
+                    return int(m.group(1))
+        except Exception:
+            pass
+    return None
+
+
+def set_charge_limit(value, dry_run=False):
+    value = int(value)
+    if value < 20 or value > 100:
+        log(f"invalid charge limit: {value}")
+        return 2
+    # Prefer asusctl battery limit
+    if shutil.which("asusctl"):
+        rc, _, _ = run(["asusctl", "battery", "limit", str(value)], dry_run=dry_run)
+        if rc == 0 or dry_run:
+            return 0
+    # Fallback busctl (asusd)
+    if shutil.which("busctl"):
+        rc, _, _ = run(["busctl", "--system", "set-property", "xyz.ljones.Asusd", "/xyz/ljones", "xyz.ljones.Platform", "ChargeControlEndThreshold", "y", str(value)], dry_run=dry_run)
+        return rc
+    log("no method to set charge limit (asusctl/busctl missing)")
+    return 1
+
+
+def status():
+    mode = None
+    # Best-effort: read persisted mode if readable
+    state = Path("/home")  # not authoritative; UI/user reads ~/.local/state
+    info = {
+        "power_source": "ac" if is_on_ac() else "battery",
+        "charge_limit": get_charge_limit(),
+        "power_profile": None,
+    }
+    if shutil.which("powerprofilesctl"):
+        try:
+            info["power_profile"] = subprocess.check_output(["powerprofilesctl", "get"], text=True, timeout=5).strip()
+        except Exception:
+            pass
+    print(json.dumps(info))
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("command", choices=["apply", "charge-limit", "status", "--status"], nargs="?")
+    ap.add_argument("value", nargs="?")
+    ap.add_argument("--dry-run", action="store_true")
+    args = ap.parse_args()
+
+    if args.command in ("status", "--status", None) and args.command != "apply" and args.command != "charge-limit":
+        status()
+        return 0
+    if args.command == "status":
+        status()
+        return 0
+    if args.command == "apply":
+        if args.value not in MODES:
+            log(f"invalid mode '{args.value}', expected one of {MODES}")
+            return 2
+        return apply_mode(args.value, dry_run=args.dry_run)
+    if args.command == "charge-limit":
+        if args.value is None or not re.fullmatch(r"\d+", args.value):
+            log("charge-limit requires integer 20-100")
+            return 2
+        return set_charge_limit(args.value, dry_run=args.dry_run)
+    ap.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,10 @@
+// /etc/polkit-1/rules.d/90-powermodemenu.rules
+// Allow active local users in group "wheel" to run the powermodemenu helper
+// without an interactive password prompt. The helper validates its arguments.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/local/lib/powermodemenu/powermodemenu-helper" &&
+        subject.active && subject.local && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

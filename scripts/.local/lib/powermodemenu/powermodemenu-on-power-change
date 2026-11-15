@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# /usr/local/lib/powermodemenu/powermodemenu-on-power-change
+# Run by udev on AC plug/unplug (root). Re-applies the persisted power mode
+# so Automatic adapts to AC/battery, and falls back from Gaming on unplug.
+#
+# Limitations: sending a desktop notification from udev/root to the user
+# session is best-effort (depends on session bus availability).
+
+set -u
+HELPER="/usr/local/lib/powermodemenu/powermodemenu-helper"
+LOGTAG="powermodemenu-on-power-change"
+
+log() { logger -t "$LOGTAG" "$*" 2>/dev/null || echo "$LOGTAG: $*" >&2; }
+
+# Find persisted mode for the active/first regular user (best-effort).
+find_mode() {
+  local user home mode
+  # Try loginctl active sessions
+  if command -v loginctl >/dev/null 2>&1; then
+    user=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$3 != "" {print $3; exit}')
+  fi
+  [ -z "${user:-}" ] && user="${SUDO_USER:-}"
+  if [ -z "${user:-}" ]; then
+    # fallback: first user with state file
+    for home in /home/*; do
+      [ -f "$home/.local/state/powermodemenu/mode" ] && { cat "$home/.local/state/powermodemenu/mode"; return; }
+    done
+    return
+  fi
+  home=$(getent passwd "$user" | cut -d: -f6)
+  [ -n "$home" ] && [ -f "$home/.local/state/powermodemenu/mode" ] && cat "$home/.local/state/powermodemenu/mode"
+}
+
+is_on_ac() {
+  for f in /sys/class/power_supply/AC*/online /sys/class/power_supply/ADP*/online /sys/class/power_supply/Mains*/online; do
+    [ -f "$f" ] && [ "$(cat "$f" 2>/dev/null)" = "1" ] && return 0
+  done
+  return 1
+}
+
+MODE=$(find_mode | tr -d '\r\n' | head -n1)
+[ -z "$MODE" ] && MODE="automatic"
+
+# If gaming and unplugged -> fall back to automatic
+if [ "$MODE" = "gaming" ] && ! is_on_ac; then
+  log "Gaming active but on battery: falling back to automatic"
+  MODE="automatic"
+  # update persisted mode for known users
+  for home in /home/*; do
+    if [ -f "$home/.local/state/powermodemenu/mode" ]; then
+      printf 'automatic\n' > "$home/.local/state/powermodemenu/mode" 2>/dev/null || true
+    fi
+  done
+  # Best-effort notification to active graphical user
+  if command -v loginctl >/dev/null 2>&1; then
+    user=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$3 != "" {print $3; exit}')
+    uid=$(id -u "$user" 2>/dev/null || echo "")
+    if [ -n "$uid" ] && [ -n "$user" ]; then
+      sudo -u "$user" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+        notify-send -a "Power Mode" "Modo de energía" "Cargador desconectado: cambiado a Automático" 2>/dev/null || true
+    fi
+  fi
+fi
+
+if [ -x "$HELPER" ]; then
+  "$HELPER" apply "$MODE" || log "helper apply failed for mode=$MODE"
+else
+  log "helper not found at $HELPER"
+fi

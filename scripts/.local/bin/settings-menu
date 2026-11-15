@@ -98,17 +98,6 @@ def sddm_install_term(value=None):
     run_term(f"{HOME / '.local/bin/sddm-install'} {target}")
 
 
-def read_charge_limit():
-    for path in sorted(glob.glob("/sys/class/power_supply/BAT*/charge_control_end_threshold")):
-        try:
-            raw = Path(path).read_text(encoding="utf-8").strip()
-            if raw:
-                return raw
-        except (OSError, ValueError):
-            continue
-    return "100"
-
-
 def load_css(path, priority):
     if not path.is_file():
         print(f"settings-menu: CSS not found: {path}", file=sys.stderr)
@@ -139,12 +128,9 @@ class SettingsPanel(Gtk.Window):
         self.get_style_context().add_class("settings-window")
 
         self.loading = True
-        self.charge_source = None
-
         self.build_chrome()
         self.populate_body()
 
-        self.charge_source = GLib.timeout_add_seconds(2, self.refresh_charge_limit)
         self.connect("destroy", self.on_destroy)
         self.loading = False
 
@@ -191,7 +177,6 @@ class SettingsPanel(Gtk.Window):
         )
         self.surface.pack_start(self.avatar_row(), False, False, 0)
         self.surface.pack_start(self.low_end_row(), False, False, 0)
-        self.surface.pack_start(self.charge_limit_row(), False, False, 0)
 
     def section_title(self, text):
         label = Gtk.Label(label=text, xalign=0)
@@ -474,36 +459,7 @@ class SettingsPanel(Gtk.Window):
             return
         run_bg([str(HOME / ".local/bin/low-end-toggle"), "toggle"])
 
-    def charge_limit_row(self):
-        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        row.get_style_context().add_class("setting-row")
-
-        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        text_box.set_hexpand(True)
-        title = Gtk.Label(label="Límite de carga", xalign=0)
-        self.charge_label = Gtk.Label(xalign=0)
-        self.charge_label.get_style_context().add_class("section-title")
-        self.refresh_charge_limit()
-        text_box.pack_start(title, False, False, 0)
-        text_box.pack_start(self.charge_label, False, False, 0)
-        row.pack_start(text_box, True, True, 0)
-
-        chevron = Gtk.Label(label="›")
-        chevron.get_style_context().add_class("row-chevron")
-        chevron.set_valign(Gtk.Align.CENTER)
-        row.pack_start(chevron, False, False, 0)
-        return self.make_clickable_row(
-            row, lambda: run_bg([str(HOME / ".local/bin/battery-settings")])
-        )
-
-    def refresh_charge_limit(self):
-        self.charge_label.set_text(f"{read_charge_limit()} %")
-        return True
-
     def on_destroy(self, _window):
-        if self.charge_source is not None:
-            GLib.source_remove(self.charge_source)
-            self.charge_source = None
         Gtk.main_quit()
 
 

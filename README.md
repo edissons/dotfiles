@@ -510,7 +510,7 @@ Comparte estilos con los otros paneles (`~/.config/theme/current.css` y
 | Barra y dock | Abre el panel GTK3 `waybar-settings`: módulos de la barra, auto-ocultado y ajustes del dock. |
 | Aplicaciones del dock | Abre `dock-settings`: añade o quita apps fijadas de nwg-dock. Esta entrada vive solo en el menú principal de Ajustes. |
 | Modo bajo consumo | Activa o desactiva `low-end-toggle`: menos efectos y perfil de energía más ligero. |
-| Límite de carga: N % | Abre el panel GTK3 `battery-settings`: estado de la batería y límite de carga (20–100 %). |
+
 
 El panel «Barra y dock» (`waybar-settings`, GTK3) tiene dos secciones:
 
@@ -830,36 +830,21 @@ tocar `hyprland.lua` ni usar `pkill`.
 
 ### Límite de carga
 
-`battery-settings` (`scripts/.local/bin/battery-settings`) es un panel GTK3 para
-consultar la batería y fijar el umbral de carga. Se abre desde Ajustes
-(engranaje de Waybar o `SUPER+,`), en su última entrada «Límite de carga: N %»,
-o directamente:
+El límite de carga de batería (`charge_control_end_threshold`, 20–100 %) se
+controla ahora desde el popup **Batería / Modo de energía** (`powermodemenu`):
+clic en el icono de batería en Waybar → «Battery Settings…» (presets 60/80/100 %
+y slider). Este es el único lugar que controla el límite (no hay dos fuentes de
+verdad).
 
-```bash
-~/.local/bin/battery-settings
-```
+La UI no se ejecuta como root; aplica el cambio mediante el helper privilegiado
+`/usr/local/lib/powermodemenu/powermodemenu-helper` (`charge-limit <20-100>`)
+usando `asusctl battery limit N` o, si no está disponible, `busctl --system
+set-property xyz.ljones.Asusd /xyz/ljones xyz.ljones.Platform
+ChargeControlEndThreshold y N`. El valor real se lee al iniciar para mostrar el
+estado actual.
 
-El panel tiene dos secciones:
-
-- **ESTADO**: capacidad, estado traducido (`Cargando`, `Descargando`, `Completa`,
-  `En pausa (límite)`, `Desconocido`) y si el equipo está conectado. Se refresca
-  cada 2 s.
-- **LÍMITE DE CARGA**: slider de 20 a 100 % con marcas en 80 % y 100 %.
-
-El valor se aplica con un debounce de 300 ms, así que varios movimientos
-seguidos producen una sola invocación con el último valor:
-
-```bash
-asusctl battery limit N
-```
-
-`asusctl` pide el cambio por D-Bus a `asusd`, que lo persiste entre reinicios.
-Si `asusctl` no está disponible, el panel usa el fallback:
-
-```bash
-busctl --system set-property xyz.ljones.Asusd /xyz/ljones \
-  xyz.ljones.Platform ChargeControlEndThreshold y N
-```
+`battery-settings` (`scripts/.local/bin/battery-settings`) queda como panel de
+consulta de estado de batería (ya no controla el límite desde Ajustes).
 
 El panel **no usa `sudo` ni `pkexec`** y no escribe sysfs ni
 `/etc/asusd/asusd.ron`: delega en `asusd`. Tras aplicar, relee
@@ -1458,9 +1443,16 @@ español y usa `⊞` para la tecla Super:
   carga alcanzado; sonidos y umbrales configurables en
   `~/.config/battery-alert/config`, arranque por la unidad de usuario
   `battery-alert.service`.
-- `scripts/.local/bin/battery-settings`: panel GTK3 «Batería» con el estado y el
-  slider de límite de carga (20–100 %); aplica con `asusctl`/`busctl` sin
-  `sudo`. Comparte `waybar/.config/waybar/settings.css` con `waybar-settings`.
+- `scripts/.local/bin/battery-settings`: panel GTK3 «Batería» (estado/capacidad).
+  El control del límite de carga se movió al popup de energía/batería
+  (`~/.local/bin/powermodemenu`, «Battery Settings…») para evitar dos fuentes de verdad.
+- `scripts/.local/bin/powermodemenu` y `~/.config/powermodemenu/powermodemenu.py`:
+  popup de batería/modos de energía (GTK4 + gtk4-layer-shell, namespace
+  `powermodemenu`) con modos Automático/Bajo consumo/Alto rendimiento/Gaming,
+  límite de carga y estado en vivo; acciones privilegiadas vía helper
+  `/usr/local/lib/powermodemenu/powermodemenu-helper`.
+- `scripts/.local/bin/waybar-battery`: módulo de Waybar con tooltip de modo actual
+  y `on-click` para abrir el popup de batería.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.

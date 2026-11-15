@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Launcher/toggle for the Battery/Power Mode popup (Wayland layer-shell).
+# Single-instance toggle is handled by the app (Gtk.Application id).
+exec python3 "$HOME/.config/powermodemenu/powermodemenu.py" "$@"

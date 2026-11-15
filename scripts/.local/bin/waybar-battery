@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Waybar custom battery module: shows battery status and current power mode."""
+import json
+import os
+from pathlib import Path
+
+def read(p):
+    try:
+        return Path(p).read_text(encoding="utf-8", errors="ignore").strip()
+    except Exception:
+        return None
+
+bat = None
+for b in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+    if (b / "capacity").is_file():
+        bat = b
+        break
+
+cap = read(bat / "capacity") if bat else None
+status = (read(bat / "status") if bat else "") or ""
+cap_i = int(cap) if cap and cap.isdigit() else None
+
+icons = ["󰁺","󰁻","󰁼","󰁽","󰁾","󰁿","󰂀","󰂁","󰂂","󰁹"]
+icon = icons[min(9, max(0, (cap_i or 0) // 10))]
+if status.lower() in ("charging",):
+    icon = "󰂄"
+elif status.lower() in ("full", "not charging"):
+    icon = "󰂄" if read(bat / "capacity") == "100" or status.lower()=="full" else icon
+
+state = Path.home() / ".local/state/powermodemenu/mode"
+mode = read(state) or "automatic"
+mode_names = {"automatic": "Automatic", "low": "Low Power", "high": "High Power", "gaming": "Gaming"}
+
+classes = []
+if status.lower() == "charging":
+    classes.append("charging")
+if cap_i is not None:
+    if cap_i <= 15 and status.lower() != "charging":
+        classes.append("critical")
+    elif cap_i <= 30 and status.lower() != "charging":
+        classes.append("warning")
+
+text = f"{icon} {cap_i}%" if cap_i is not None else f"{icon} --%"
+tooltip = f"{cap_i}% - {status or 'Unknown'}\nMode: {mode_names.get(mode, mode)}"
+
+print(json.dumps({"text": text, "tooltip": tooltip, "class": classes}))

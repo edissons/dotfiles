@@ -1,0 +1,12 @@
+# ~/.config/systemd/user/powermodemenu-apply.service
+# Re-apply the persisted power mode at user login (stage 3).
+[Unit]
+Description=Apply persisted power mode (powermodemenu)
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.config/powermodemenu/apply-saved-mode.sh
+
+[Install]
+WantedBy=default.target

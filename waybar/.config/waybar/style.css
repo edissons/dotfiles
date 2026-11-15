@@ -55,15 +55,15 @@ background: @surface;
 
 #window { padding: 0 10px; color: @subtext; font-family: "SF Pro Text"; font-weight: 500; }
 
-#tray, #bluetooth, #network, #pulseaudio, #battery, #clock {
+#tray, #bluetooth, #network, #pulseaudio, #battery, #custom-battery, #clock {
 padding: 0 10px;
 }
 
 #clock { font-family: "SF Pro Text"; font-weight: 500; }
 
-#battery.charging { color: @green; }
-#battery.warning:not(.charging) { color: @yellow; }
-#battery.critical:not(.charging) { color: @red; }
+#battery.charging, #custom-battery.charging { color: @green; }
+#battery.warning:not(.charging), #custom-battery.warning:not(.charging) { color: @yellow; }
+#battery.critical:not(.charging), #custom-battery.critical:not(.charging) { color: @red; }
 
 #pulseaudio.muted, #network.disconnected, #bluetooth.off, #bluetooth.disabled {
 color: @subtext;
@@ -93,3 +93,6 @@ tooltip label { color: @text; }
 #custom-gaming.on { color: @green; }
 #custom-gaming.off { color: @subtext; }
 #custom-gaming:hover { color: @accent; }
+
+/* Highlight battery module while power mode menu is open (optional: toggle class externally) */
+#custom-battery.powermode-open { color: @accent; }

@@ -1,0 +1,4 @@
+# /etc/sudoers.d/powermodemenu
+# Allow members of wheel to run ONLY the powermodemenu helper without password.
+# Validate with: sudo visudo -cf /etc/sudoers.d/powermodemenu
+%wheel ALL=(root) NOPASSWD: /usr/local/lib/powermodemenu/powermodemenu-helper

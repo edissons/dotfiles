@@ -129,27 +129,6 @@
     "scroll-step": 5,
     "on-click": "pamixer -t"
   },
-  "battery": {
-    "states": {
-      "warning": 30,
-      "critical": 15
-    },
-    "format": "{icon} {capacity}%",
-    "format-charging": "󰂄 {capacity}%",
-    "format-plugged": "󰂄 {capacity}%",
-    "format-icons": [
-      "󰁺",
-      "󰁻",
-      "󰁼",
-      "󰁽",
-      "󰁾",
-      "󰁿",
-      "󰂀",
-      "󰂁",
-      "󰂂",
-      "󰁹"
-    ]
-  },
   "clock": {
     "format": "{:L%a %d %b  %H:%M}",
     "format-alt": "{:L%A, %d %B %Y}",
@@ -223,5 +202,13 @@
     "escape": true,
     "on-click": "swaync-client -t -sw",
     "on-click-right": "swaync-client -d -sw"
+  },
+  "custom/battery": {
+    "exec": "$HOME/.local/bin/waybar-battery",
+    "return-type": "json",
+    "interval": 10,
+    "format": "{}",
+    "tooltip": true,
+    "on-click": "$HOME/.local/bin/powermodemenu"
   }
 }
