@@ -132,14 +132,14 @@ hl.layer_rule({
     ignore_alpha = 0.3,
 })
 
--- --- Blur del menú de energía (layer-shell, namespace: powermenu) ---
+-- --- Blur del menú de energía (layer-shell, namespace: powermodemenu) ---
 
 hl.layer_rule({
     match = {
-        namespace = "^powermenu$",
+        namespace = "^powermodemenu$",
     },
     blur = true,
-    ignore_alpha = 0,
+    ignore_alpha = 0.3,
 })
 
 -- --- Atajos básicos ---
