@@ -5,7 +5,7 @@ Before=plymouth-quit.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/aplay -q /usr/local/share/sounds/reactos-boot.wav
+ExecStart=/usr/bin/aplay -q -D plughw:1,0 /usr/local/share/sounds/reactos-boot.wav
 
 [Install]
 WantedBy=sysinit.target
