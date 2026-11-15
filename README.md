@@ -1451,6 +1451,10 @@ español y usa `⊞` para la tecla Super:
   `powermodemenu`) con modos Automático/Bajo consumo/Alto rendimiento/Gaming,
   límite de carga y estado en vivo; acciones privilegiadas vía helper
   `/usr/local/lib/powermodemenu/powermodemenu-helper`.
+- `scripts/.config/powermodemenu/apply-idle-profile`: genera/aplica perfiles de
+  `hypridle` según modo y estado AC/batería (Automático AC/batería, Bajo, Alto;
+  Gaming detiene `hypridle` mientras está activo). Hibernación automática solo
+  si `/sys/power/state` incluye `disk`.
 - `scripts/.local/bin/waybar-battery`: módulo de Waybar con tooltip de modo actual
   y `on-click` para abrir el popup de batería.
 

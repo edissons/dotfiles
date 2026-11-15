@@ -67,3 +67,17 @@ if [ -x "$HELPER" ]; then
 else
   log "helper not found at $HELPER"
 fi
+
+# Best-effort: update hypridle idle profile in the active user session
+# (Automatic has different timeouts on AC vs battery).
+if command -v loginctl >/dev/null 2>&1; then
+  user=$(loginctl list-sessions --no-legend 2>/dev/null | awk '$3 != "" {print $3; exit}')
+  uid=$(id -u "$user" 2>/dev/null || echo "")
+  home=$(getent passwd "$user" 2>/dev/null | cut -d: -f6)
+  if [ -n "$uid" ] && [ -n "$user" ] && [ -n "$home" ] && [ -x "$home/.config/powermodemenu/apply-idle-profile" ]; then
+    sudo -u "$user" \
+      XDG_RUNTIME_DIR="/run/user/$uid" \
+      DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$uid/bus" \
+      "$home/.config/powermodemenu/apply-idle-profile" >/dev/null 2>&1 || true
+  fi
+fi

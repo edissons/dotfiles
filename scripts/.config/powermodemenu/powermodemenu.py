@@ -265,6 +265,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.selected_mode = load_mode()
         self.rows = {}
         self.refresh_source = None
+        self._last_on_ac = is_on_ac()
 
         # Layer shell setup: overlay popup anchored top-right
         LayerShell.init_for_window(self)
@@ -466,6 +467,8 @@ class PowerModeMenu(Gtk.ApplicationWindow):
             self.enter_gaming_session()
         else:
             self.leave_gaming_session()
+        # Apply hypridle timeout profile for the selected mode/AC state
+        self.apply_idle_profile()
         # Close after choosing a mode (as specified)
         self.close()
 
@@ -482,20 +485,23 @@ class PowerModeMenu(Gtk.ApplicationWindow):
             pass
 
     def leave_gaming_session(self):
-        # Best-effort: stop our inhibitor and restart hypridle if configured
+        # Best-effort: stop our gaming inhibitor (idle profile apply will restart hypridle)
         try:
             subprocess.run(["pkill", "-f", "Gaming mode (powermodemenu)"], check=False)
         except Exception:
             pass
-        # Restore previous mode's idle behavior is handled by helper/mode config;
-        # for now, ensure hypridle is running if not gaming.
-        try:
-            hypridle_conf = Path.home() / "dotfiles/hypr/.config/hypr/hypridle.conf"
-            r = subprocess.run(["pgrep", "-x", "hypridle"], capture_output=True)
-            if r.returncode != 0 and shutil.which("hypridle") and hypridle_conf.is_file():
-                subprocess.Popen(["hypridle", "-c", str(hypridle_conf)], start_new_session=True)
-        except Exception:
-            pass
+
+    def apply_idle_profile(self):
+        script = Path.home() / ".config/powermodemenu/apply-idle-profile"
+        if not script.is_file():
+            # fallback to repo copy
+            script = Path(__file__).resolve().parent / "apply-idle-profile"
+        if script.is_file():
+            try:
+                subprocess.Popen([str(script)], start_new_session=True,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
     def set_charge_limit(self, value):
         rc, out, err = run_helper(["charge-limit", str(int(value))], dry_run=self.dry_run)
@@ -533,11 +539,19 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         if not self.get_visible():
             return False
         self.refresh_all()
+        on_ac = is_on_ac()
         # Auto-fallback: if gaming active but unplugged, fall back to automatic
-        if self.selected_mode == "gaming" and not is_on_ac():
+        if self.selected_mode == "gaming" and not on_ac:
             notify("Power mode", "Charger unplugged: switched to Automatic")
             self.select_mode("automatic")
             return False
+        # Automatic mode: reapply when AC state changes (EPP/ASPM/maxfreq + idle profile)
+        if self.selected_mode == "automatic" and on_ac != self._last_on_ac:
+            self._last_on_ac = on_ac
+            run_helper(["apply", "automatic"], dry_run=self.dry_run)
+            self.apply_idle_profile()
+        else:
+            self._last_on_ac = on_ac
         return True
 
     def update_mode_rows(self):

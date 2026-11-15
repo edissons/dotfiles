@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+"""
+Apply hypridle timeout profile for the current powermodemenu mode and AC state.
+
+Profiles (approximating requested behavior):
+- automatic (AC):     dim 600s, lock 900s, dpms-off 930s, suspend 1800s, hibernate 3600s*
+- automatic (battery):dim 180s, lock 600s, dpms-off 630s, suspend  900s, hibernate 2700s*
+- low:                dim 120s, lock 300s, dpms-off 330s, suspend  600s
+- high:               dim 600s, lock 900s, dpms-off 930s, suspend 1800s
+- gaming:             stop/disable hypridle (idle inhibited by powermodemenu UI)
+
+* hibernate listener added only if /sys/power/state includes "disk".
+This runs in the user session (no root). It generates a config under
+~/.config/powermodemenu/hypridle-<profile>.conf and (re)starts hypridle.
+"""
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+HOME = Path.home()
+STATE_MODE = HOME / ".local/state/powermodemenu/mode"
+OUT_DIR = HOME / ".config/powermodemenu"
+BASE_LOCK = "$HOME/.local/bin/lock-screen"
+HYPRIDLE = shutil.which("hypridle")
+
+
+def read_text(p):
+    try:
+        return Path(p).read_text(encoding="utf-8", errors="ignore").strip()
+    except Exception:
+        return None
+
+
+def is_on_ac():
+    for base in sorted(Path("/sys/class/power_supply").glob("*")):
+        if (base / "online").is_file():
+            name = base.name.upper()
+            if name.startswith(("AC", "ADP", "MAINS")):
+                return read_text(base / "online") == "1"
+    bat = None
+    for b in sorted(Path("/sys/class/power_supply").glob("BAT*")):
+        if (b / "status").is_file():
+            st = (read_text(b / "status") or "").lower()
+            if st in ("charging", "full"):
+                return True
+    return False
+
+
+def hibernate_available():
+    st = read_text("/sys/power/state") or ""
+    return "disk" in st.split()
+
+
+def mode():
+    m = read_text(STATE_MODE) or "automatic"
+    return m if m in ("automatic", "low", "high", "gaming") else "automatic"
+
+
+def profile_config(name, dim, lock, dpms, suspend, hibernate=None):
+    # Build hypridle config. Listeners are independent timers (as in current config).
+    lines = [
+        "general {",
+        f"    lock_cmd = {BASE_LOCK}",
+        "    before_sleep_cmd = loginctl lock-session",
+        "    after_sleep_cmd = hyprctl dispatch 'hl.dsp.dpms({action = \"on\"})'",
+        "}",
+        "",
+        "listener {",
+        f"    timeout = {dim}",
+        "    on-timeout = loginctl lock-session",
+        "}",
+        "",
+        "listener {",
+        f"    timeout = {dpms}",
+        "    on-timeout = hyprctl dispatch 'hl.dsp.dpms({action = \"off\"})'",
+        "    on-resume = hyprctl dispatch 'hl.dsp.dpms({action = \"on\"})'",
+        "}",
+        "",
+        "listener {",
+        f"    timeout = {suspend}",
+        "    on-timeout = systemctl suspend",
+        "}",
+    ]
+    if hibernate and hibernate_available():
+        lines += [
+            "",
+            "listener {",
+            f"    timeout = {hibernate}",
+            "    on-timeout = systemctl hibernate",
+            "}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def stop_hypridle():
+    subprocess.run(["pkill", "-x", "hypridle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    for _ in range(20):
+        r = subprocess.run(["pgrep", "-x", "hypridle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode != 0:
+            return
+        subprocess.run(["sleep", "0.05"])
+    subprocess.run(["pkill", "-9", "-x", "hypridle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def start_hypridle(conf):
+    if not HYPRIDLE:
+        return
+    r = subprocess.run(["pgrep", "-x", "hypridle"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if r.returncode == 0:
+        stop_hypridle()
+    subprocess.Popen([HYPRIDLE, "-c", str(conf)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def main():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    m = mode()
+    on_ac = is_on_ac()
+
+    if m == "gaming":
+        # Gaming: idle/sleep/lock inhibited by UI; ensure hypridle is not running.
+        stop_hypridle()
+        print("idle-profile: gaming (hypridle stopped)")
+        return 0
+
+    if m == "automatic" and on_ac:
+        name = "automatic-ac"
+        cfg = profile_config(name, dim=600, lock=900, dpms=930, suspend=1800, hibernate=3600)
+    elif m == "automatic":
+        name = "automatic-battery"
+        cfg = profile_config(name, dim=180, lock=600, dpms=630, suspend=900, hibernate=2700)
+    elif m == "low":
+        name = "low"
+        cfg = profile_config(name, dim=120, lock=300, dpms=330, suspend=600)
+    else:  # high
+        name = "high"
+        cfg = profile_config(name, dim=600, lock=900, dpms=930, suspend=1800)
+
+    conf_path = OUT_DIR / f"hypridle-{name}.conf"
+    conf_path.write_text(cfg, encoding="utf-8")
+    # Also write a "current" pointer for reference
+    (OUT_DIR / "hypridle-current.conf").write_text(cfg, encoding="utf-8")
+    start_hypridle(conf_path)
+    print(f"idle-profile: applied {name} (on_ac={on_ac}) -> {conf_path}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
