@@ -121,9 +121,9 @@ def load_css(path, priority):
     return provider
 
 
-class SettingsPanel(Gtk.Window):
-    def __init__(self):
-        super().__init__(title="Ajustes")
+class SettingsPanel(Gtk.ApplicationWindow):
+    def __init__(self, app):
+        super().__init__(application=app, title="Ajustes")
         self.set_default_size(520, 720)
         self.get_style_context().add_class("settings-window")
 
@@ -460,16 +460,31 @@ class SettingsPanel(Gtk.Window):
         run_bg([str(HOME / ".local/bin/low-end-toggle"), "toggle"])
 
     def on_destroy(self, _window):
-        Gtk.main_quit()
+        pass
+
+
+class SettingsApp(Gtk.Application):
+    """Single-instance app: launching again while open toggles (closes) it."""
+
+    def __init__(self):
+        super().__init__(application_id="glasshouse.settingsmenu")
+        self.win = None
+
+    def do_activate(self):
+        # Toggle: if a window is already open, close it.
+        if self.win and self.win.get_visible():
+            self.win.destroy()
+            self.win = None
+            return
+        self.win = SettingsPanel(self)
+        self.win.show_all()
 
 
 def main():
     load_css(THEME_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER)
     load_css(SETTINGS_CSS, Gtk.STYLE_PROVIDER_PRIORITY_USER + 1)
-    panel = SettingsPanel()
-    panel.show_all()
-    Gtk.main()
-    return 0
+    app = SettingsApp()
+    return app.run(sys.argv)
 
 
 if __name__ == "__main__":

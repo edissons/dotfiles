@@ -12,12 +12,7 @@ Set DRY_RUN = False (see "Customization" below) after verifying the menu.
 # -----------------------------------------------------------------------------
 DRY_RUN = False  # True = print commands with `echo` (safe). False = run them.
 
-# Glass / overlay
-OVERLAY_TINT_RGBA = "rgba(0, 0, 0, 0.45)"   # darken desktop behind menu (~40-50%)
-PILL_BG_RGBA = "rgba(255, 255, 255, 0.13)"   # translucent pill fill
-PILL_BG_HOVER_RGBA = "rgba(255, 255, 255, 0.22)"
-PILL_BORDER_RGBA = "rgba(255, 255, 255, 0.15)"
-PILL_HIGHLIGHT_RGBA = "rgba(255, 255, 255, 0.10)"  # top edge highlight
+# Glass / overlay (geometry). Colors adapt to system light/dark mode at runtime.
 PILL_WIDTH = 360
 PILL_HEIGHT = 68
 PILL_RADIUS = 34
@@ -27,7 +22,6 @@ BADGE_SIZE = 44
 # Accents (icon badge)
 ACCENT_SHUTDOWN = "#ff6b4a"  # red/orange
 ACCENT_REBOOT = "#4da3ff"    # blue
-ACCENT_NEUTRAL = "rgba(255,255,255,0.18)"
 
 # Text / fonts
 TITLE_SIZE_PX = 28
@@ -60,6 +54,19 @@ gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell
 
 HOME = Path.home()
+THEME_MODE_FILE = HOME / ".config/theme/mode"
+
+
+def is_light_mode() -> bool:
+    try:
+        return THEME_MODE_FILE.read_text(encoding="utf-8", errors="ignore").strip().lower() == "light"
+    except Exception:
+        return False
+
+
+def accent_neutral() -> str:
+    # Neutral badge: subtle contrast in both modes
+    return "rgba(0,0,0,0.10)" if is_light_mode() else "rgba(255,255,255,0.18)"
 
 
 # -----------------------------------------------------------------------------
@@ -148,14 +155,15 @@ def hibernate_available() -> bool:
 # Commands are argv lists; DRY_RUN prints them via `echo` instead of running.
 # -----------------------------------------------------------------------------
 def build_actions():
+    neutral = accent_neutral()
     actions = [
-        ("lock", "", L["lock"], ["loginctl", "lock-session"], ACCENT_NEUTRAL, False),
-        ("logout", "󰍃", L["logout"], ["hyprctl", "dispatch", "exit"], ACCENT_NEUTRAL, True),
-        ("sleep", "󰤄", L["sleep"], ["systemctl", "suspend"], ACCENT_NEUTRAL, False),
+        ("lock", "", L["lock"], ["loginctl", "lock-session"], neutral, False),
+        ("logout", "󰍃", L["logout"], ["hyprctl", "dispatch", "exit"], neutral, True),
+        ("sleep", "󰤄", L["sleep"], ["systemctl", "suspend"], neutral, False),
     ]
     if hibernate_available():
         actions.append(
-            ("hibernate", "󰒲", L["hibernate"], ["systemctl", "hibernate"], ACCENT_NEUTRAL, False)
+            ("hibernate", "󰒲", L["hibernate"], ["systemctl", "hibernate"], neutral, False)
         )
     actions.extend(
         [
@@ -185,27 +193,61 @@ def run_action(argv):
 # this stylesheet provides tint, translucency, borders, highlights and motion.
 # -----------------------------------------------------------------------------
 def load_css():
+    light = is_light_mode()
+    try:
+        settings = Gtk.Settings.get_default()
+        if settings:
+            settings.set_property("gtk-application-prefer-dark-theme", not light)
+    except Exception:
+        pass
+
+    if light:
+        # Light mode: keep dim overlay for focus, but use light glass pills/text
+        overlay_tint = "rgba(255, 255, 255, 0.28)"
+        pill_bg = "rgba(255, 255, 255, 0.72)"
+        pill_bg_hover = "rgba(255, 255, 255, 0.86)"
+        pill_border = "rgba(0, 0, 0, 0.10)"
+        pill_highlight = "rgba(255, 255, 255, 0.55)"
+        text_primary = "rgba(0,0,0,0.85)"
+        text_secondary = "rgba(0,0,0,0.55)"
+        text_cancel = "rgba(0,0,0,0.55)"
+        hover_border = "rgba(0,0,0,0.18)"
+        x_bg = pill_bg
+        x_bg_hover = pill_bg_hover
+    else:
+        overlay_tint = "rgba(0, 0, 0, 0.45)"
+        pill_bg = "rgba(255, 255, 255, 0.13)"
+        pill_bg_hover = "rgba(255, 255, 255, 0.22)"
+        pill_border = "rgba(255, 255, 255, 0.15)"
+        pill_highlight = "rgba(255, 255, 255, 0.10)"
+        text_primary = "#ffffff"
+        text_secondary = "rgba(255,255,255,0.55)"
+        text_cancel = "rgba(255,255,255,0.65)"
+        hover_border = "rgba(255,255,255,0.28)"
+        x_bg = pill_bg
+        x_bg_hover = pill_bg_hover
+
     css = f"""
     * {{
         font-family: {FONT_FAMILY};
     }}
     window, .pm-window {{
-        background-color: {OVERLAY_TINT_RGBA};
+        background-color: {overlay_tint};
     }}
     .pm-title {{
-        color: #ffffff;
+        color: {text_primary};
         font-size: {TITLE_SIZE_PX}px;
         font-weight: 600;
     }}
     .pm-subtitle {{
-        color: rgba(255,255,255,0.55);
+        color: {text_secondary};
         font-size: {SUBTITLE_SIZE_PX}px;
         font-weight: 400;
     }}
     .pm-pill {{
-        background-color: {PILL_BG_RGBA};
-        background-image: linear-gradient(to bottom, {PILL_HIGHLIGHT_RGBA}, rgba(255,255,255,0));
-        border: 1px solid {PILL_BORDER_RGBA};
+        background-color: {pill_bg};
+        background-image: linear-gradient(to bottom, {pill_highlight}, rgba(255,255,255,0));
+        border: 1px solid {pill_border};
         border-radius: {PILL_RADIUS}px;
         min-width: {PILL_WIDTH}px;
         min-height: {PILL_HEIGHT}px;
@@ -213,9 +255,8 @@ def load_css():
         transition: all {HOVER_TRANSITION_MS}ms ease;
     }}
     .pm-pill:hover, .pm-pill:focus {{
-        background-color: {PILL_BG_HOVER_RGBA};
-        /* slight "scale-up" feel via brighter bg; true transform is limited in GTK3 */
-        border-color: rgba(255,255,255,0.28);
+        background-color: {pill_bg_hover};
+        border-color: {hover_border};
         outline: none;
     }}
     .pm-badge {{
@@ -226,26 +267,26 @@ def load_css():
         font-size: 18px;
     }}
     .pm-label {{
-        color: #ffffff;
+        color: {text_primary};
         font-size: {LABEL_SIZE_PX}px;
         font-weight: 500;
     }}
     .pm-x {{
-        background-color: {PILL_BG_RGBA};
-        border: 1px solid {PILL_BORDER_RGBA};
+        background-color: {x_bg};
+        border: 1px solid {pill_border};
         border-radius: 28px;
         min-width: 56px;
         min-height: 56px;
-        color: #ffffff;
+        color: {text_primary};
         font-size: 22px;
         transition: all {HOVER_TRANSITION_MS}ms ease;
     }}
     .pm-x:hover, .pm-x:focus {{
-        background-color: {PILL_BG_HOVER_RGBA};
+        background-color: {x_bg_hover};
         outline: none;
     }}
     .pm-cancel {{
-        color: rgba(255,255,255,0.65);
+        color: {text_cancel};
         font-size: {CANCEL_LABEL_SIZE_PX}px;
     }}
     button {{

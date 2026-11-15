@@ -298,6 +298,16 @@ def _is_light_mode():
     mode = read_text(Path.home() / ".config/theme/mode")
     return (mode or "").strip().lower() == "light"
 
+
+def _apply_prefer_dark():
+    # Ensure GTK widgets (switch/scale rendering) match system light/dark mode.
+    try:
+        settings = Gtk.Settings.get_default()
+        if settings:
+            settings.set_property("gtk-application-prefer-dark-theme", not _is_light_mode())
+    except Exception:
+        pass
+
 def load_theme_css():
     display = Gdk.Display.get_default()
     if not display:
@@ -313,22 +323,45 @@ def load_theme_css():
             pass
 
 def css():
+    light = _is_light_mode()
     # --- Visual tuning (single place) ---
     CARD_ALPHA = 0.55          # card fill alpha; must be > Hyprland ignore_alpha for blur
     RADIUS_PX = 20             # card corner radius
-    BORDER_RGBA = "rgba(255,255,255,0.14)"
-    INSET_HIGHLIGHT = "inset 0 1px 0 rgba(255,255,255,0.14)"
-    TEXT_PRIMARY = "rgba(255,255,255,0.92)"
-    TEXT_SECONDARY = "rgba(255,255,255,0.55)"
     ACCENT = "#0a84ff"
-    SEP_RGBA = "rgba(255,255,255,0.10)"
-    ROW_HOVER = "rgba(255,255,255,0.10)"
-    ROW_SELECTED = "rgba(10,132,255,0.22)"
-    BADGE_NEUTRAL = "rgba(255,255,255,0.10)"
     CARD_PAD = 12              # outer padding (only on card)
     CONTENT_INSET = 8          # horizontal inset for rows/toggle (aligns with text lines)
-    # Card fill (dark glass). Kept explicit so blur/ignore_alpha can be tuned consistently.
-    CARD_BG = f"rgba(24, 26, 34, {CARD_ALPHA})"
+    if light:
+        # Light glass: keep alpha > Hyprland ignore_alpha (0.3) so blur still applies
+        CARD_BG = f"rgba(245, 245, 247, {CARD_ALPHA})"
+        TEXT_PRIMARY = "rgba(0,0,0,0.85)"
+        TEXT_SECONDARY = "rgba(0,0,0,0.55)"
+        BORDER_RGBA = "rgba(0,0,0,0.10)"
+        INSET_HIGHLIGHT = "inset 0 1px 0 rgba(255,255,255,0.60)"
+        SEP_RGBA = "rgba(0,0,0,0.10)"
+        ROW_HOVER = "rgba(0,0,0,0.06)"
+        ROW_SELECTED = "rgba(10,132,255,0.18)"
+        BADGE_NEUTRAL = "rgba(0,0,0,0.08)"
+        PRESET_BG = "rgba(0,0,0,0.05)"
+        PRESET_HOVER = "rgba(0,0,0,0.10)"
+        PRESET_ACTIVE = "rgba(0,0,0,0.14)"
+        SCALE_TROUGH = "rgba(0,0,0,0.12)"
+        SLIDER_BG = "#ffffff"
+    else:
+        # Dark glass
+        CARD_BG = f"rgba(24, 26, 34, {CARD_ALPHA})"
+        TEXT_PRIMARY = "rgba(255,255,255,0.92)"
+        TEXT_SECONDARY = "rgba(255,255,255,0.55)"
+        BORDER_RGBA = "rgba(255,255,255,0.14)"
+        INSET_HIGHLIGHT = "inset 0 1px 0 rgba(255,255,255,0.14)"
+        SEP_RGBA = "rgba(255,255,255,0.10)"
+        ROW_HOVER = "rgba(255,255,255,0.10)"
+        ROW_SELECTED = "rgba(10,132,255,0.22)"
+        BADGE_NEUTRAL = "rgba(255,255,255,0.10)"
+        PRESET_BG = "rgba(255,255,255,0.06)"
+        PRESET_HOVER = "rgba(255,255,255,0.12)"
+        PRESET_ACTIVE = "rgba(255,255,255,0.16)"
+        SCALE_TROUGH = "rgba(255,255,255,0.12)"
+        SLIDER_BG = "#ffffff"
 
     return f"""
     /* Window and parents: fully transparent so only the card is visible */
@@ -475,7 +508,7 @@ def css():
     button.pm-preset {{
         min-height: 0;
         padding: 4px 12px;
-        background-color: rgba(255,255,255,0.06);
+        background-color: {PRESET_BG};
         background-image: none;
         border: 1px solid {SEP_RGBA};
         border-radius: 10px;
@@ -484,15 +517,15 @@ def css():
         text-shadow: none;
     }}
     button.pm-preset:hover {{
-        background-color: rgba(255,255,255,0.12);
+        background-color: {PRESET_HOVER};
         border-color: rgba(10,132,255,0.5);
     }}
     button.pm-preset:active {{
-        background-color: rgba(255,255,255,0.16);
+        background-color: {PRESET_ACTIVE};
     }}
-    scale trough {{ border-radius: 999px; min-height: 6px; background: rgba(255,255,255,0.12); }}
+    scale trough {{ border-radius: 999px; min-height: 6px; background: {SCALE_TROUGH}; }}
     scale highlight {{ border-radius: 999px; min-height: 6px; background: {ACCENT}; }}
-    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: #ffffff; box-shadow: none; }}
+    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: {SLIDER_BG}; box-shadow: none; }}
     """
 
 
@@ -900,6 +933,7 @@ def main():
     if args.status:
         print_status()
         return 0
+    _apply_prefer_dark()
     # Load theme/base CSS then popup-specific CSS
     load_theme_css()
     provider = Gtk.CssProvider()
