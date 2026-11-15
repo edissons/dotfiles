@@ -338,49 +338,115 @@ def css():
         badge_bg = "alpha(@text, 0.14)"
         card_shadow = "0 14px 34px rgba(0,0,0,0.35)"
     return f"""
+    /* Compact floating card (anchored TOP+RIGHT, sized to content) */
     window {{ background: transparent; }}
     .pm-card {{
         background: {bg};
         color: {fg};
         border: 1px solid {border};
         border-radius: {RADIUS}px;
-        padding: 14px;
+        padding: 12px;
         box-shadow: {card_shadow};
     }}
     .pm-header {{ font-weight: 700; font-size: 15px; color: {fg}; }}
     .pm-sub {{ color: {sub}; font-size: 12px; }}
     .pm-sep {{ background: {sep}; min-height: 1px; margin: 8px 0; }}
     .pm-section {{ color: {sub}; font-size: 12px; font-weight: 600; margin: 6px 2px 4px 2px; letter-spacing: 0.5px; }}
-    /* Mode rows: match Glasshouse .setting-row aesthetic */
+
+    /* Mode rows: reset GTK button chrome; only inner row background changes */
+    button.pm-mode,
+    button.pm-mode:hover,
+    button.pm-mode:active,
+    button.pm-mode:checked,
+    button.pm-mode:focus,
+    button.pm-mode:focus-visible {{
+        background: none;
+        background-image: none;
+        background-color: transparent;
+        box-shadow: none;
+        text-shadow: none;
+        -gtk-icon-shadow: none;
+        border: none;
+        outline: none;
+        padding: 0;
+        margin: 0;
+        min-height: 0;
+        min-width: 0;
+        border-radius: 12px;
+    }}
     .pm-row {{
-        transition: background-color 140ms ease, border-color 140ms ease;
+        border-radius: 12px;
+        padding: 8px 10px;
+        min-height: 30px;
+        transition: background-color 120ms ease, border-color 120ms ease;
     }}
     .pm-row.setting-row {{
-        padding: 10px 12px;
+        background-color: @surface;
+        border: 1px solid @border;
     }}
-    .pm-row:hover, .pm-row:focus {{
-        background: alpha(@accent, 0.08);
-        border-color: alpha(@accent, 0.35);
-        outline: none;
+    button.pm-mode:hover .pm-row,
+    button.pm-mode:focus .pm-row,
+    button.pm-mode:focus-visible .pm-row {{
+        background-color: alpha(@text, 0.12);
+        border-color: alpha(@border, 0.9);
+    }}
+    button.pm-mode:hover .pm-row.selected,
+    button.pm-mode:focus .pm-row.selected {{
+        background-color: {row_sel};
+        border-color: alpha(@accent, 0.45);
     }}
     .pm-row.selected {{
-        background: {row_sel};
+        background-color: {row_sel};
         border-color: alpha(@accent, 0.45);
     }}
     .pm-badge {{
-        min-width: 22px; min-height: 22px; border-radius: 11px;
-        background: {badge_bg}; color: {fg}; font-size: 12px; font-weight: 700;
+        min-width: 32px; min-height: 32px; border-radius: 16px;
+        background: alpha(@text, 0.14); color: {fg}; font-size: 13px; font-weight: 700;
     }}
     .pm-badge.selected {{ background: @accent; color: #ffffff; }}
     .pm-disabled {{ opacity: 0.45; }}
     .pm-hint {{ color: {sub}; font-size: 11px; }}
+
+    /* Battery Settings toggle row */
+    button.pm-toggle,
+    button.pm-toggle:hover,
+    button.pm-toggle:active,
+    button.pm-toggle:focus,
+    button.pm-toggle:focus-visible {{
+        background: none;
+        background-image: none;
+        background-color: transparent;
+        box-shadow: none;
+        text-shadow: none;
+        border: none;
+        outline: none;
+        padding: 0;
+        margin: 0;
+        min-height: 0;
+        border-radius: 12px;
+    }}
+    .pm-toggle-row {{
+        border-radius: 12px;
+        padding: 10px 12px;
+        transition: background-color 120ms ease, border-color 120ms ease;
+    }}
+    .pm-toggle-row.setting-row {{
+        background-color: @surface;
+        border: 1px solid @border;
+    }}
+    button.pm-toggle:hover .pm-toggle-row,
+    button.pm-toggle:focus .pm-toggle-row {{
+        background-color: alpha(@text, 0.12);
+    }}
+    .pm-chevron {{ color: {sub}; font-size: 14px; font-weight: 600; }}
+
     .pm-charge {{
-        margin-top: 2px;
+        margin-top: 6px;
     }}
     .pm-charge.setting-row {{
         padding: 10px 12px;
     }}
-    /* Presets: match .action-button aesthetic */
+    /* Presets: flat action buttons */
     button.pm-preset {{
         min-height: 0;
         padding: 4px 12px;
@@ -390,18 +456,18 @@ def css():
         border-radius: 10px;
         color: @text;
         box-shadow: none;
+        text-shadow: none;
     }}
     button.pm-preset:hover {{
-        background-color: @surface;
+        background-color: alpha(@text, 0.10);
         border-color: alpha(@accent, 0.5);
     }}
     button.pm-preset:active {{
-        background-color: @border;
+        background-color: alpha(@text, 0.16);
     }}
     scale trough {{ border-radius: 999px; min-height: 6px; background: alpha(@text, 0.12); }}
     scale highlight {{ border-radius: 999px; min-height: 6px; background: @accent; }}
-    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: @text; }}
-    button.flat {{ background: transparent; border: none; box-shadow: none; }}
+    scale slider {{ min-width: 18px; min-height: 18px; border-radius: 9px; background: @text; box-shadow: none; }}
     """
 
 
@@ -427,11 +493,14 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         LayerShell.set_margin(self, LayerShell.Edge.RIGHT, MARGIN_RIGHT)
 
         self.set_decorated(False)
-        self.set_default_size(340, 10)
+        # Compact popup: ~300px wide, height sized to content
+        self.set_default_size(300, -1)
 
         # Card
         self.card = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         self.card.add_css_class("pm-card")
+        self.card.set_hexpand(False)
+        self.card.set_vexpand(False)
         self.set_child(self.card)
 
         self.build_ui()
@@ -440,10 +509,14 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.refresh_source = GLib.timeout_add_seconds(5, self.refresh_live)
         self.connect("close-request", self.on_close)
 
-        # Close on Escape / focus loss handled via key controller
+        # Close on Escape
         key = Gtk.EventControllerKey()
         key.connect("key-pressed", self.on_key)
         self.add_controller(key)
+        # Close when focus leaves the popup (click outside / switch window)
+        focus = Gtk.EventControllerFocus()
+        focus.connect("leave", lambda *_: self.close())
+        self.add_controller(focus)
 
     def on_close(self, *_):
         if self.refresh_source:
@@ -501,15 +574,33 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.card.append(self.energy_label)
 
         self.sep()
-        sec_b = Gtk.Label(label=L["battery_settings"], xalign=0)
-        sec_b.add_css_class("pm-section")
-        self.card.append(sec_b)
-        # Inline charge limit panel (always visible so slider is obvious)
+        # Battery Settings toggle (collapsed by default, smooth reveal)
+        self.charge_revealer = Gtk.Revealer()
+        self.charge_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
+        self.charge_revealer.set_transition_duration(180)
+        self.charge_revealer.set_reveal_child(False)  # collapsed by default
+
+        toggle_btn = Gtk.Button()
+        toggle_btn.add_css_class("pm-toggle")
+        toggle_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        toggle_row.add_css_class("pm-toggle-row")
+        toggle_row.add_css_class("setting-row")
+        tlabel = Gtk.Label(label=L["battery_settings"], xalign=0)
+        tlabel.set_hexpand(True)
+        toggle_row.append(tlabel)
+        self.charge_chevron = Gtk.Label(label="›")
+        self.charge_chevron.add_css_class("pm-chevron")
+        toggle_row.append(self.charge_chevron)
+        toggle_btn.set_child(toggle_row)
+        toggle_btn.connect("clicked", self.on_toggle_charge)
+        self.card.append(toggle_btn)
+
         self.charge_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         self.charge_panel.add_css_class("pm-charge")
         self.charge_panel.add_css_class("setting-row")
-        self.card.append(self.charge_panel)
         self.build_charge_panel()
+        self.charge_revealer.set_child(self.charge_panel)
+        self.card.append(self.charge_revealer)
 
     def build_charge_panel(self):
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -543,15 +634,23 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.charge_panel.append(self.charge_msg)
         self._charge_apply_source = None
 
+    def on_toggle_charge(self, *_args):
+        revealed = not self.charge_revealer.get_reveal_child()
+        self.charge_revealer.set_reveal_child(revealed)
+        self.charge_chevron.set_text("⌄" if revealed else "›")
+        if revealed:
+            # Read real value when opened
+            self.refresh_charge_limit_ui()
+
     def make_mode_row(self, mode, label, icon):
         btn = Gtk.Button()
-        btn.add_css_class("flat")
+        btn.add_css_class("pm-mode")
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.add_css_class("pm-row")
         row.add_css_class("setting-row")
         badge = Gtk.Label(label=icon)
         badge.add_css_class("pm-badge")
-        badge.set_size_request(22, 22)
+        badge.set_size_request(32, 32)
         row.append(badge)
         txt = Gtk.Label(label=label, xalign=0)
         txt.set_hexpand(True)
