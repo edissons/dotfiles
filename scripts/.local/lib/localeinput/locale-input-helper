@@ -1,0 +1,565 @@
+#!/usr/bin/env python3
+"""
+locale-input-helper (root): system locale and console/X11 keyboard settings.
+
+This is the ONLY privileged component of Settings -> Language & Input.  The GTK
+menu never runs as root; it calls this helper through pkexec, allowed by
+/etc/polkit-1/rules.d/90-localeinput.rules (same pattern as the power-mode
+helper).
+
+Commands:
+  locale-input-helper --status
+  locale-input-helper locale-set <locale> [--dry-run]
+  locale-input-helper locale-add <locale> [--dry-run]
+  locale-input-helper keymap-set <layout[,layout...]> [<options>] [--dry-run]
+  locale-input-helper pkg-install <package...> [--dry-run]
+
+Validation:
+  * locale names must be present in /usr/share/i18n/SUPPORTED
+  * layout codes and options must be present in
+    /usr/share/X11/xkb/rules/evdev.lst (sections "! layout" and "! option")
+  * packages must match a fixed allow-list AND exist in the pacman sync DB
+
+Safety:
+  * /etc/locale.gen is backed up once to /etc/locale.gen.bak; other lines are
+    never removed or reordered.
+  * locale-gen regenerates every enabled locale (the Arch script has no
+    per-locale argument), so it is run after the file is updated.
+  * The console keymap is chosen from a small table and only applied when
+    `localectl list-keymaps` lists it; otherwise it is left untouched.
+  * Hyprland is NOT changed here: hyprctl must talk to the user's compositor.
+    The UI applies the live layout with `hyprctl eval` and writes the userprefs
+    block as the user.  This helper only updates the system-wide TTY/SDDM
+    keymap and the system locale.
+"""
+import argparse
+import json
+import os
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+LOG_PREFIX = "locale-input-helper"
+SUPPORTED = Path("/usr/share/i18n/SUPPORTED")
+LOCALE_GEN = Path("/etc/locale.gen")
+LOCALE_GEN_BAK = Path("/etc/locale.gen.bak")
+EVDEV_LST = Path("/usr/share/X11/xkb/rules/evdev.lst")
+PACMAN = shutil.which("pacman")
+
+# Locale variables that should follow LANG so that every category is coherent.
+# LC_ALL is intentionally not written: it would override per-user choices and
+# is usually reserved for temporary command prefixes.
+LC_VARS = (
+    "LC_CTYPE",
+    "LC_NUMERIC",
+    "LC_TIME",
+    "LC_COLLATE",
+    "LC_MONETARY",
+    "LC_MESSAGES",
+    "LC_PAPER",
+    "LC_NAME",
+    "LC_ADDRESS",
+    "LC_TELEPHONE",
+    "LC_MEASUREMENT",
+    "LC_IDENTIFICATION",
+)
+
+# Console keymap equivalents.  A layout not listed here still works in X11 /
+# Hyprland; only the TTY/SDDM console keymap is skipped (with a log message).
+CONSOLE_KEYMAPS = {
+    "us": "us",
+    "us-intl": "us",
+    "latam": "la-latin1",
+    "es": "es",
+    "fr": "fr",
+    "de": "de",
+    "gb": "uk",
+    "br": "br-abnt2",
+    "pt": "pt-latin1",
+    "it": "it",
+    "ru": "ru",
+    "pl": "pl",
+    "tr": "tr",
+    "se": "se",
+    "dk": "dk",
+    "no": "no",
+    "fi": "fi",
+    "ch": "ch",
+    "ca": "ca",
+    "cz": "cz",
+    "hu": "hu",
+    "gr": "gr",
+    "il": "il",
+    "jp": "jp",
+    "kr": "kr",
+    "ua": "ua",
+}
+
+# Package allow-list.  Only language packs are accepted; the UI additionally
+# checks `pacman -Si` before offering them, and this helper checks again.
+PKG_RE = re.compile(
+    r"^(?:"
+    r"hunspell|mythes|hyphen"
+    r"|firefox-i18n|thunderbird-i18n"
+    r"|libreoffice-(?:still|fresh)"
+    r")-[a-z]{2,3}(?:[-_][a-z]{2,3})?$"
+)
+
+
+def log(msg):
+    print(f"{LOG_PREFIX}: {msg}", file=sys.stderr)
+
+
+def run(cmd, dry_run=False, timeout=30):
+    """Run a command (list). In dry-run, print it and do not execute."""
+    printable = " ".join(cmd)
+    if dry_run:
+        print(f"[dry-run] {printable}")
+        return 0, "", ""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "").strip()
+            log(f"command failed ({r.returncode}): {printable} :: {detail}")
+        return r.returncode, (r.stdout or ""), (r.stderr or "")
+    except Exception as exc:
+        log(f"command error: {printable} :: {exc}")
+        return 1, "", str(exc)
+
+
+def read_text(path):
+    try:
+        return Path(path).read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+
+def user_home():
+    """Home of the user that invoked pkexec/sudo (not root's home)."""
+    uid = None
+    for key in ("PKEXEC_UID", "SUDO_UID"):
+        value = os.environ.get(key, "")
+        if value.isdigit():
+            uid = int(value)
+            break
+    if uid is None:
+        uid = os.getuid()
+    try:
+        return Path(pwd.getpwuid(uid).pw_dir)
+    except KeyError:
+        return Path.home()
+
+
+def parse_supported():
+    """Return {locale: charset} from /usr/share/i18n/SUPPORTED."""
+    text = read_text(SUPPORTED)
+    if text is None:
+        return {}
+    entries = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            entries[parts[0]] = parts[1]
+    return entries
+
+
+def parse_evdev():
+    """Return (layouts, options) from the XKB rules list.
+
+    evdev.lst is organised in sections introduced by lines such as
+    "! layout" and "! option".  Only those two sections are relevant.
+    The first occurrence of a code is the canonical description; later ones
+    are aliases like "us  ba: Bosnian (US)".
+    """
+    text = read_text(EVDEV_LST)
+    if text is None:
+        return {}, {}
+    layouts, options = {}, {}
+    section = None
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.startswith("!"):
+            section = line[1:].strip()
+            continue
+        if section not in ("layout", "option") or not line.startswith("  "):
+            continue
+        parts = line.strip().split(None, 1)
+        if not parts:
+            continue
+        code = parts[0]
+        desc = parts[1] if len(parts) > 1 else code
+        if section == "layout":
+            layouts.setdefault(code, desc)
+        else:
+            options.setdefault(code, desc)
+    return layouts, options
+
+
+def normalize_locale(locale):
+    """Normalise locale -a spellings (es_MX.utf8) to es_MX.UTF-8."""
+    value = locale.strip()
+    value = re.sub(r"\.utf-?8$", ".UTF-8", value, flags=re.IGNORECASE)
+    return value
+
+
+def generated_locales():
+    try:
+        out = subprocess.check_output(["locale", "-a"], text=True, timeout=15)
+    except Exception:
+        return set()
+    result = set()
+    for line in out.splitlines():
+        value = normalize_locale(line)
+        if value and value not in ("C", "POSIX", "C.UTF-8"):
+            result.add(value)
+    return result
+
+
+def validate_locale(locale):
+    supported = parse_supported()
+    if not supported:
+        raise ValueError(f"cannot read {SUPPORTED}")
+    if locale not in supported:
+        raise ValueError(
+            f"locale {locale!r} is not in {SUPPORTED}; refusing to set it"
+        )
+    return supported[locale]
+
+
+def validate_layouts(value):
+    layouts = [item.strip() for item in value.split(",") if item.strip()]
+    if not layouts:
+        raise ValueError("at least one keyboard layout is required")
+    allowed, _ = parse_evdev()
+    if not allowed:
+        raise ValueError(f"cannot read {EVDEV_LST}")
+    for layout in layouts:
+        if layout not in allowed:
+            raise ValueError(
+                f"layout {layout!r} is not in {EVDEV_LST}; refusing to set it"
+            )
+    return layouts
+
+
+def validate_options(value):
+    if not value or not value.strip():
+        return []
+    options = [item.strip() for item in value.split(",") if item.strip()]
+    _, allowed = parse_evdev()
+    if not allowed:
+        raise ValueError(f"cannot read {EVDEV_LST}")
+    for option in options:
+        if option not in allowed:
+            raise ValueError(
+                f"option {option!r} is not in {EVDEV_LST}; refusing to set it"
+            )
+    return options
+
+
+def console_keymap(layouts):
+    """Pick a TTY keymap only when localectl lists it; otherwise return None."""
+    try:
+        out = subprocess.check_output(
+            ["localectl", "list-keymaps"], text=True, timeout=15
+        )
+    except Exception:
+        return None
+    available = {line.strip() for line in out.splitlines() if line.strip()}
+    for layout in layouts:
+        base = layout.split("-", 1)[0]
+        for candidate in (CONSOLE_KEYMAPS.get(layout), CONSOLE_KEYMAPS.get(base)):
+            if candidate and candidate in available:
+                return candidate
+    return None
+
+
+def set_locale(locale, dry_run=False):
+    validate_locale(locale)
+    if normalize_locale(locale) not in generated_locales() and not dry_run:
+        log(
+            f"locale {locale} is not generated yet; run locale-add first "
+            f"(locale -a does not list it)"
+        )
+        return 2
+
+    assignments = [f"LANG={locale}"] + [f"{name}={locale}" for name in LC_VARS]
+    cmd = ["localectl", "set-locale", *assignments]
+    rc, _, _ = run(cmd, dry_run=dry_run)
+    if rc != 0:
+        return rc
+
+    if dry_run:
+        return 0
+
+    status = read_text(Path("/etc/locale.conf")) or ""
+    if f"LANG={locale}" not in status:
+        log(f"localectl did not write LANG={locale} to /etc/locale.conf")
+        return 1
+    return 0
+
+
+def write_locale_gen(locale, charset, dry_run=False):
+    """Enable exactly one locale in /etc/locale.gen, keeping every other line."""
+    text = read_text(LOCALE_GEN)
+    if text is None:
+        log(f"cannot read {LOCALE_GEN}")
+        return False
+
+    # Back up only the first time: /etc/locale.gen.bak is the pristine copy.
+    if not LOCALE_GEN_BAK.exists():
+        if dry_run:
+            print(f"[dry-run] cp -a {LOCALE_GEN} {LOCALE_GEN_BAK}")
+        else:
+            try:
+                shutil.copy2(LOCALE_GEN, LOCALE_GEN_BAK)
+            except Exception as exc:
+                log(f"cannot create {LOCALE_GEN_BAK}: {exc}")
+                return False
+
+    pattern = re.compile(
+        r"^\s*#?\s*" + re.escape(locale) + r"\s+" + re.escape(charset) + r"\s*(?:#.*)?$"
+    )
+    lines = text.splitlines()
+    found = False
+    new_lines = []
+    for line in lines:
+        if pattern.match(line):
+            new_lines.append(f"{locale} {charset}")
+            found = True
+        else:
+            new_lines.append(line)
+    if not found:
+        # Append at the end: no existing line is touched or reordered.
+        new_lines.append(f"{locale} {charset}")
+
+    if dry_run:
+        print(f"[dry-run] update {LOCALE_GEN}: enable {locale} {charset}")
+        return True
+
+    tmp = LOCALE_GEN.with_name(LOCALE_GEN.name + ".localeinput.tmp")
+    try:
+        tmp.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        shutil.copymode(LOCALE_GEN, tmp)
+        os.replace(tmp, LOCALE_GEN)
+    except Exception as exc:
+        log(f"cannot update {LOCALE_GEN}: {exc}")
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        return False
+    return True
+
+
+def add_locale(locale, dry_run=False):
+    charset = validate_locale(locale)
+    if not write_locale_gen(locale, charset, dry_run=dry_run):
+        return 1
+
+    rc, out, err = run(["locale-gen"], dry_run=dry_run, timeout=300)
+    if rc != 0:
+        return rc
+
+    if dry_run:
+        return 0
+
+    if normalize_locale(locale) not in generated_locales():
+        log(
+            f"locale-gen finished but {locale} is still absent from `locale -a`; "
+            f"check /etc/locale.gen"
+        )
+        return 1
+    log(f"locale {locale} generated")
+    return 0
+
+
+def set_keymap(layouts_value, options_value, dry_run=False):
+    layouts = validate_layouts(layouts_value)
+    options = validate_options(options_value)
+
+    # 1) Console / TTY keymap.  If there is no known equivalent, leave the
+    #    existing keymap untouched instead of writing an invalid one.
+    keymap = console_keymap(layouts)
+    if keymap:
+        rc, _, _ = run(["localectl", "set-keymap", keymap], dry_run=dry_run)
+        if rc != 0:
+            return rc
+    else:
+        log(
+            f"no console keymap equivalent for {','.join(layouts)}; "
+            f"leaving the TTY keymap unchanged"
+        )
+
+    # 2) X11 / SDDM keymap.  Empty VARIANT and OPTIONS are passed explicitly so
+    #    a previous option (e.g. grp:caps_toggle) is cleared when the UI selects
+    #    "None".
+    layouts_str = ",".join(layouts)
+    options_str = ",".join(options)
+    cmd = ["localectl", "set-x11-keymap", layouts_str, "pc105", "", options_str]
+    rc, _, _ = run(cmd, dry_run=dry_run)
+    if rc != 0:
+        return rc
+
+    if dry_run:
+        return 0
+
+    vconsole = read_text(Path("/etc/vconsole.conf")) or ""
+    if f"XKBLAYOUT={layouts_str}" not in vconsole:
+        log(f"localectl did not write XKBLAYOUT={layouts_str} to /etc/vconsole.conf")
+        return 1
+    return 0
+
+
+def package_exists(package):
+    if not PACMAN:
+        return False
+    try:
+        r = subprocess.run(
+            [PACMAN, "-Si", package],
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        return r.returncode == 0
+    except Exception:
+        return False
+
+
+def install_packages(packages, dry_run=False):
+    if not PACMAN:
+        log("pacman not found; cannot install language packages")
+        return 1
+    selected = []
+    for package in packages:
+        if not PKG_RE.match(package):
+            log(f"refusing package outside the allow-list: {package}")
+            continue
+        if not package_exists(package):
+            log(f"package not found in the pacman sync DB: {package}")
+            continue
+        selected.append(package)
+    if not selected:
+        log("no valid, existing package to install")
+        return 2
+    cmd = [PACMAN, "-S", "--needed", "--noconfirm", *selected]
+    rc, _, _ = run(cmd, dry_run=dry_run, timeout=1800)
+    return rc
+
+
+def read_user_keyboard():
+    """Read the last uncommented kb_layout/kb_options from the user's prefs."""
+    home = user_home()
+    result = {"layouts": [], "options": [], "source": None}
+    for path in (
+        home / ".config/hypr/userprefs.conf",
+        home / ".config/hypr/userprefs.lua",
+    ):
+        text = read_text(path)
+        if text is None:
+            continue
+        layouts = options = None
+        for raw in text.splitlines():
+            line = raw.strip()
+            if not line or line.startswith("#") or line.startswith("--"):
+                continue
+            match = re.match(r'kb_layout\s*=\s*"?([^",]+)"?', line)
+            if match:
+                layouts = [item.strip() for item in match.group(1).split(",") if item.strip()]
+            match = re.match(r'kb_options\s*=\s*"?([^"]*)"?', line)
+            if match:
+                options = [item.strip() for item in match.group(1).split(",") if item.strip()]
+        if layouts:
+            result.update(layouts=layouts, options=options or [], source=str(path))
+    return result
+
+
+def status():
+    localectl = ""
+    try:
+        localectl = subprocess.check_output(
+            ["localectl", "status"], text=True, timeout=10
+        ).strip()
+    except Exception:
+        pass
+
+    locale_conf = {}
+    for raw in (read_text(Path("/etc/locale.conf")) or "").splitlines():
+        line = raw.strip()
+        if "=" in line and not line.startswith("#"):
+            key, value = line.split("=", 1)
+            locale_conf[key] = value
+
+    active_gen = []
+    for raw in (read_text(LOCALE_GEN) or "").splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            active_gen.append(line)
+
+    payload = {
+        "user": {"home": str(user_home())},
+        "locale": locale_conf,
+        "generated": sorted(generated_locales()),
+        "locale_gen": active_gen,
+        "supported_count": len(parse_supported()),
+        "keyboard": read_user_keyboard(),
+        "localectl": localectl,
+    }
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="System locale and console/X11 keyboard helper (root only)."
+    )
+    parser.add_argument("--status", action="store_true", help="print current state as JSON")
+    parser.add_argument("--dry-run", action="store_true", help="print commands, change nothing")
+    sub = parser.add_subparsers(dest="command")
+
+    p_locale_set = sub.add_parser("locale-set", help="set LANG and LC_* via localectl")
+    p_locale_set.add_argument("locale")
+    p_locale_set.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+
+    p_locale_add = sub.add_parser("locale-add", help="enable a locale and run locale-gen")
+    p_locale_add.add_argument("locale")
+    p_locale_add.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+
+    p_keymap = sub.add_parser("keymap-set", help="set TTY and X11/SDDM keymaps")
+    p_keymap.add_argument("layouts", help="comma-separated XKB layouts, e.g. us,latam")
+    p_keymap.add_argument("options", nargs="?", default="", help="comma-separated XKB options")
+    p_keymap.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+
+    p_pkg = sub.add_parser("pkg-install", help="install allow-listed language packages")
+    p_pkg.add_argument("packages", nargs="+")
+    p_pkg.add_argument("--dry-run", action="store_true", default=argparse.SUPPRESS)
+
+    args = parser.parse_args()
+    dry_run = getattr(args, "dry_run", False)
+
+    try:
+        if args.status:
+            return status()
+        if args.command == "locale-set":
+            return set_locale(args.locale, dry_run=dry_run)
+        if args.command == "locale-add":
+            return add_locale(args.locale, dry_run=dry_run)
+        if args.command == "keymap-set":
+            return set_keymap(args.layouts, args.options, dry_run=dry_run)
+        if args.command == "pkg-install":
+            return install_packages(args.packages, dry_run=dry_run)
+    except ValueError as exc:
+        log(f"error: {exc}")
+        return 2
+
+    parser.print_help()
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

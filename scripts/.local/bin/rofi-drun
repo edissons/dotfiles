@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Locale-aware rofi app launcher. Overrides the placeholder text so the search
+# field follows the system language (set via localectl / Language & Input).
+set -euo pipefail
+lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${lang,,}" in
+  en*) placeholder="Search" ;;
+  *)   placeholder="Buscar" ;;
+esac
+exec rofi -show drun -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" \
+  -theme-str "entry { placeholder: \"${placeholder}\"; }" "$@"

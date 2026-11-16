@@ -130,41 +130,21 @@ L = STRINGS[detect_lang()]
 
 
 # -----------------------------------------------------------------------------
-# Hibernate availability check
-# Hibernation needs kernel support ("disk" in /sys/power/state) and swap
-# (swapon --show). Some setups (e.g. zram-only, missing resume=) still cannot
-# resume; this check hides the option when basic prerequisites are missing.
-# -----------------------------------------------------------------------------
-def hibernate_available() -> bool:
-    try:
-        states = Path("/sys/power/state").read_text(encoding="utf-8", errors="ignore")
-    except Exception:
-        return False
-    if "disk" not in states.split():
-        return False
-    try:
-        out = subprocess.check_output(["swapon", "--show", "--noheadings"], text=True)
-    except Exception:
-        return False
-    return bool(out.strip())
-
-
-# -----------------------------------------------------------------------------
 # Actions: each entry is (id, icon, label, command_argv, accent, destructive)
 # destructive = True for Shutdown/Reboot/Logout (run immediately on confirm).
 # Commands are argv lists; DRY_RUN prints them via `echo` instead of running.
+# Hibernate is intentionally omitted: on this setup there is no suitable
+# disk-backed swap/resume configuration, so the option is suppressed.
 # -----------------------------------------------------------------------------
 def build_actions():
     neutral = accent_neutral()
     actions = [
         ("lock", "", L["lock"], ["loginctl", "lock-session"], neutral, False),
-        ("logout", "󰍃", L["logout"], ["hyprctl", "dispatch", "exit"], neutral, True),
+        # Hyprland 0.57+ (Lua config) rejects `hyprctl dispatch exit`; try the new
+        # dispatcher form and fall back to loginctl for other/older setups.
+        ("logout", "󰍃", L["logout"], ["sh", "-c", 'hyprctl dispatch exit 2>/dev/null || hyprctl dispatch "hl.dsp.exit()" 2>/dev/null || loginctl terminate-session "${XDG_SESSION_ID:-}" 2>/dev/null || loginctl kill-session "${XDG_SESSION_ID:-}"'], neutral, True),
         ("sleep", "󰤄", L["sleep"], ["systemctl", "suspend"], neutral, False),
     ]
-    if hibernate_available():
-        actions.append(
-            ("hibernate", "󰒲", L["hibernate"], ["systemctl", "hibernate"], neutral, False)
-        )
     actions.extend(
         [
             ("reboot", "󰜉", L["reboot"], ["systemctl", "reboot"], ACCENT_REBOOT, True),

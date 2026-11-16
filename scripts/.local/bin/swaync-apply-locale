@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Write a Glasshouse swaync config matching the system locale and reload swaync.
+set -euo pipefail
+lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${lang,,}" in en*) L=en ;; *) L=es ;; esac
+if [ "$L" = en ]; then
+  T_NOTIF="Notifications"; T_CLEAR="Clear all"; T_DND="Do Not Disturb"
+else
+  T_NOTIF="Notificaciones"; T_CLEAR="Borrar todo"; T_DND="No molestar"
+fi
+cfg="$HOME/.config/swaync/config.json"
+cat > "$cfg" <<JSON
+{
+  "positionX": "right",
+  "positionY": "top",
+  "layer": "overlay",
+  "control-center-layer": "top",
+  "layer-shell": true,
+  "cssPriority": "user",
+  "control-center-margin-top": 8,
+  "control-center-margin-right": 12,
+  "control-center-margin-bottom": 8,
+  "notification-window-width": 380,
+  "control-center-width": 400,
+  "notification-icon-size": 48,
+  "timeout": 6,
+  "timeout-low": 4,
+  "timeout-critical": 0,
+  "fit-to-screen": false,
+  "hide-on-clear": true,
+  "hide-on-action": true,
+  "widgets": ["title", "dnd", "notifications", "mpris", "backlight", "volume", "buttons-grid"],
+  "widget-config": {
+    "title": { "text": "${T_NOTIF}", "clear-all-button": true, "button-text": "${T_CLEAR}" },
+    "dnd": { "text": "${T_DND}" },
+    "mpris": { "image-size": 48, "image-radius": 12 },
+    "volume": { "label": "󰕾" },
+    "backlight": { "label": "󰃟" },
+    "buttons-grid": {
+      "actions": [
+        { "label": "  󱛆  ", "command": "nm-connection-editor" },
+        { "label": "    ", "command": "blueman-manager" },
+        { "label": "  󰃛  ", "command": "sh -c 'pgrep -x hyprsunset >/dev/null && pkill -x hyprsunset || hyprsunset &'" },
+        { "label": "  ⏻  ", "command": "power-menu" }
+      ]
+    }
+  }
+}
+JSON
+# Reload if running
+if command -v swaync-client >/dev/null 2>&1; then
+  swaync-client --reload-config >/dev/null 2>&1 || true
+  swaync-client --reload-css >/dev/null 2>&1 || true
+fi

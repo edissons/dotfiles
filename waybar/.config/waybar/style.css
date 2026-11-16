@@ -85,6 +85,17 @@ tooltip label { color: @text; }
     font-size: 16px;
 }
 
+#language {
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: @text;
+}
+
+#language:hover {
+    color: @accent;
+}
+
 #custom-updates { color: @yellow; }
 #temperature.critical { color: @red; }
 #custom-power:hover { color: @red; }

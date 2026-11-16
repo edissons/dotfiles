@@ -17,6 +17,7 @@
 # Usage:
 #   ./install.sh [--dry-run] [--yes] [--verbose] [--allow-nonstandard]
 #                [--with-session] [--with-fonts] [--with-sddm] [--with-boot-sound]
+#                [--with-localeinput]
 #                [--install-deps] [--install-desktop-deps] [--install-sddm-deps]
 #   ./install.sh --help
 #
@@ -45,6 +46,7 @@ WITH_SDDM=0
 WITH_BOOT_SOUND=0
 WITH_FINGERPRINT=0
 WITH_LOCKOUT=0
+WITH_LOCALEINPUT=0
 INSTALL_DEPS=0
 INSTALL_DESKTOP_DEPS=0
 INSTALL_SDDM_DEPS=0
@@ -155,6 +157,12 @@ Flags:
                          /etc/pam.d/hyprlock (backups included), installs a
                          pam_exec cooldown helper and a dedicated faillock tally.
                          Delays: 5s, 10s, 20s, 40s, 80s, 160s, 300s.
+  --with-localeinput     Install the Language & Input helper and its polkit rule
+                         (sudo): /usr/local/lib/localeinput/locale-input-helper
+                         and /etc/polkit-1/rules.d/90-localeinput.rules. The
+                         settings menu calls it via pkexec; it validates locales
+                         against /usr/share/i18n/SUPPORTED and layouts against
+                         evdev.lst.
   --install-deps         Install missing required Arch packages with pacman.
   --install-desktop-deps Install the optional Arch desktop dependency profile
                          with pacman (opt-in; no AUR/paru, no pacman -Sy).
@@ -241,6 +249,7 @@ parse_args() {
       --with-boot-sound) WITH_BOOT_SOUND=1 ;;
       --with-fingerprint) WITH_FINGERPRINT=1 ;;
       --with-lockout) WITH_LOCKOUT=1 ;;
+      --with-localeinput) WITH_LOCALEINPUT=1 ;;
       --install-deps) INSTALL_DEPS=1 ;;
       --install-desktop-deps) INSTALL_DESKTOP_DEPS=1 ;;
       --install-sddm-deps) INSTALL_SDDM_DEPS=1 ;;
@@ -954,6 +963,40 @@ check_dependencies() {
   done
 }
 
+install_localeinput() {
+  log "Installing Language & Input helper and polkit rule (sudo)"
+  local helper_src="$REPO/scripts/.local/lib/localeinput/locale-input-helper"
+  local rule_src="$REPO/scripts/system/polkit/90-localeinput.rules"
+  local helper_dst="/usr/local/lib/localeinput/locale-input-helper"
+  local rule_dst="/etc/polkit-1/rules.d/90-localeinput.rules"
+
+  if [[ ! -f "$helper_src" || ! -f "$rule_src" ]]; then
+    error "Language & Input files are missing: $helper_src / $rule_src"
+    return 0
+  fi
+
+  if (( DRY_RUN )); then
+    log "[dry-run] sudo install -Dm755 $helper_src $helper_dst"
+    log "[dry-run] sudo install -Dm644 $rule_src $rule_dst"
+    return 0
+  fi
+
+  if ! confirm "Install the Language & Input helper and polkit rule with sudo?"; then
+    warn "Skipped Language & Input installation"
+    return 0
+  fi
+
+  if ! sudo install -Dm755 "$helper_src" "$helper_dst"; then
+    error "Could not install $helper_dst"
+    return 0
+  fi
+  if ! sudo install -Dm644 "$rule_src" "$rule_dst"; then
+    error "Could not install $rule_dst"
+    return 0
+  fi
+  ok "Language & Input helper installed (polkit watches rules.d automatically)"
+}
+
 install_session() {
   log "Installing privileged Hyprland session files (sudo)"
   if (( DRY_RUN )); then
@@ -1587,6 +1630,9 @@ main() {
   fi
   if (( WITH_FINGERPRINT )); then
     install_fingerprint
+  fi
+  if (( WITH_LOCALEINPUT )); then
+    install_localeinput
   fi
 
   validate_all

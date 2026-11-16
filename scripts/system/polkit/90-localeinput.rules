@@ -1,0 +1,11 @@
+// /etc/polkit-1/rules.d/90-localeinput.rules
+// Allow active local users in group "wheel" to run the locale-input helper
+// without an interactive password prompt. The helper validates every argument
+// against /usr/share/i18n/SUPPORTED, evdev.lst and a package allow-list.
+polkit.addRule(function(action, subject) {
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("program") == "/usr/local/lib/localeinput/locale-input-helper" &&
+        subject.active && subject.local && subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+    }
+});

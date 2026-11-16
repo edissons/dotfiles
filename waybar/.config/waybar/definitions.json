@@ -8,7 +8,7 @@
   "custom/logo": {
     "format": "󰣇",
     "tooltip": false,
-    "on-click": "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi"
+    "on-click": "$HOME/.local/bin/rofi-drun"
   },
   "group/workspaces": {
     "orientation": "horizontal",
@@ -63,6 +63,13 @@
     "format": "{title}",
     "max-length": 40,
     "separate-outputs": true
+  },
+  "hyprland/language": {
+    "format": "{short}",
+    "tooltip": true,
+    "tooltip-format": "{long}",
+    "on-click": "hyprctl switchxkblayout all next",
+    "on-click-right": "$HOME/.local/bin/settings-menu"
   },
   "tray": {
     "icon-size": 16,

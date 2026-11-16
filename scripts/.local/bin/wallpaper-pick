@@ -9,13 +9,37 @@ BG_DIR="$HOME/.config/theme/backgrounds"
 
 DESKTOP=0
 CUSTOM=0
-PROMPT="Fondo"
+
+# UI language follows system locale (LC_MESSAGES/LANG).
+_ui_lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${_ui_lang,,}" in en*) UI_LANG=en ;; *) UI_LANG=es ;; esac
+ui_tr() {
+  local key="$1"
+  if [ "$UI_LANG" = "en" ]; then
+    case "$key" in
+      "Fondo") echo "Background" ;;
+      "Igual que el escritorio") echo "Same as desktop" ;;
+      "Sin categoría") echo "Uncategorized" ;;
+      "Todas las imágenes") echo "All images" ;;
+      "Otra imagen…") echo "Other image…" ;;
+      "No existe la carpeta de wallpapers:") echo "Wallpaper folder does not exist:" ;;
+      "No hay imágenes en la carpeta de wallpapers:") echo "No images in wallpaper folder:" ;;
+      "No hay imágenes en esta categoría.") echo "No images in this category." ;;
+      *) echo "$key" ;;
+    esac
+  else
+    echo "$key"
+  fi
+}
+
+PROMPT="$(ui_tr "Fondo")"
+
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --desktop) DESKTOP=1 ;;
     --custom)  CUSTOM=1 ;;
-    --prompt)  PROMPT="${2:-Fondo}"; shift ;;
+    --prompt)  PROMPT="${2:-$(ui_tr "Fondo")}"; shift ;;
     *) echo "Uso: wallpaper-pick [--desktop] [--custom] [--prompt TEXTO]" >&2; exit 2 ;;
   esac
   shift
@@ -29,7 +53,7 @@ error() {
   exit 1
 }
 
-[ -d "$ROOT" ] || error "No existe la carpeta de wallpapers:
+[ -d "$ROOT" ] || error "$(ui_tr "No existe la carpeta de wallpapers:")
 $ROOT"
 
 rofi_menu() {
@@ -59,25 +83,25 @@ if [ -n "$(find "$ROOT" -mindepth 1 -maxdepth 1 -type f \
   \( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) \
   -print -quit 2>/dev/null)" ]; then
   cat_paths+=("$ROOT")
-  cat_names+=("Sin categoría")
+  cat_names+=("$(ui_tr "Sin categoría")")
   cat_direct+=(1)
 fi
 
 if ! has_images "$ROOT" && [ "$DESKTOP" -eq 0 ] && [ "$CUSTOM" -eq 0 ]; then
-  error "No hay imágenes en la carpeta de wallpapers:
+  error "$(ui_tr "No hay imágenes en la carpeta de wallpapers:")
 $ROOT"
 fi
 
 items=()
-[ "$DESKTOP" -eq 1 ] && items+=("Igual que el escritorio")
+[ "$DESKTOP" -eq 1 ] && items+=("$(ui_tr "Igual que el escritorio")")
 cat_start=${#items[@]}
 for name in "${cat_names[@]}"; do items+=("$name"); done
 all_idx=${#items[@]}
-items+=("Todas las imágenes")
+items+=("$(ui_tr "Todas las imágenes")")
 custom_idx=-1
 if [ "$CUSTOM" -eq 1 ]; then
   custom_idx=${#items[@]}
-  items+=("Otra imagen…")
+  items+=("$(ui_tr "Otra imagen…")")
 fi
 
 sel="$(printf '%s\n' "${items[@]}" | rofi_menu -p "$PROMPT")" || exit 1
@@ -131,7 +155,7 @@ else
   )
 fi
 
-[ "${#files[@]}" -gt 0 ] || error "No hay imágenes en esta categoría."
+[ "${#files[@]}" -gt 0 ] || error "$(ui_tr "No hay imágenes en esta categoría.")"
 
 {
   for f in "${files[@]}"; do

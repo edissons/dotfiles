@@ -8,6 +8,37 @@ AVATAR_DIR="$THEME/avatars"
 ROFI_CONFIG="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
 SYNC=1
 
+# UI language follows system locale (LC_MESSAGES/LANG).
+_ui_lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${_ui_lang,,}" in en*) UI_LANG=en ;; *) UI_LANG=es ;; esac
+ui_tr() {
+  local key="$1"
+  if [ "$UI_LANG" = "en" ]; then
+    case "$key" in
+      "Avatar: iniciales del usuario") echo "Avatar: user initials" ;;
+      "No existe la imagen: %s") printf "Image not found: %s" "$2" ;;
+      "Falta ImageMagick (magick)") echo "Missing ImageMagick (magick)" ;;
+      "No se pudo procesar la imagen") echo "Could not process image" ;;
+      "Avatar: %s") printf "Avatar: %s" "$2" ;;
+      "Elegir imagen de perfil") echo "Choose profile image" ;;
+      "Imágenes") echo "Images" ;;
+      "Ruta de la imagen: ") echo "Image path: " ;;
+      "Iniciales") echo "Initials" ;;
+      "Imagen personalizada…") echo "Custom image…" ;;
+      "Avatar no encontrado: %s") printf "Avatar not found: %s" "$2" ;;
+      *) echo "$key" ;;
+    esac
+  else
+    case "$key" in
+      "No existe la imagen: %s") printf "$key" "$2" ;;
+      "Avatar: %s") printf "$key" "$2" ;;
+      "Avatar no encontrado: %s") printf "$key" "$2" ;;
+      *) echo "$key" ;;
+    esac
+  fi
+}
+
+
 if [ "${1:-}" = "--no-sddm" ]; then
   SYNC=0
   shift
@@ -25,43 +56,43 @@ sync_sddm() {
 
 set_initials() {
   printf 'avatar_mode=initials\navatar_image=\n' > "$AVATAR_CONF"
-  echo "Avatar: iniciales del usuario"
+  echo "$(ui_tr "Avatar: iniciales del usuario")"
   sync_sddm
 }
 
 set_image() {
   local src="$1" tmp
-  [ -f "$src" ] || { echo "No existe la imagen: $src"; exit 1; }
-  command -v magick >/dev/null || { echo "Falta ImageMagick (magick)"; exit 1; }
+  [ -f "$src" ] || { echo "$(ui_tr "No existe la imagen: %s" "$src")"; exit 1; }
+  command -v magick >/dev/null || { echo "$(ui_tr "Falta ImageMagick (magick)")"; exit 1; }
   mkdir -p "$AVATAR_DIR"
   tmp="$(mktemp --suffix=.png)"
   if ! magick "$src" -auto-orient -resize '512x512^' -gravity center -extent 512x512 -strip "$tmp"; then
     rm -f "$tmp"
-    echo "No se pudo procesar la imagen"
+    echo "$(ui_tr "No se pudo procesar la imagen")"
     exit 1
   fi
   mv "$tmp" "$AVATAR_OUT"
   printf 'avatar_mode=image\navatar_image=%s\n' "$AVATAR_OUT" > "$AVATAR_CONF"
-  echo "Avatar: $(basename "$src")"
+  echo "$(ui_tr "Avatar: %s" "$(basename "$src")")"
   sync_sddm
 }
 
 choose_file() {
   local file
   if command -v zenity >/dev/null; then
-    file="$(zenity --file-selection --title="Elegir imagen de perfil" \
-      --file-filter='Imágenes | *.png *.jpg *.jpeg *.webp')" || exit 0
+    file="$(zenity --file-selection --title="$(ui_tr "Elegir imagen de perfil")" \
+      --file-filter="$(ui_tr "Imágenes") | *.png *.jpg *.jpeg *.webp")" || exit 0
   elif command -v kdialog >/dev/null; then
-    file="$(kdialog --getopenfilename "$HOME" 'Imágenes | *.png *.jpg *.jpeg *.webp')" || exit 0
+    file="$(kdialog --getopenfilename "$HOME" "$(ui_tr "Imágenes") | *.png *.jpg *.jpeg *.webp")" || exit 0
   else
-    read -r -p "Ruta de la imagen: " file
+    read -r -p "$(ui_tr "Ruta de la imagen: ")" file
   fi
   set_image "$file"
 }
 
 menu() {
   local choice
-  local -a choices=("Iniciales")
+  local -a choices=("$(ui_tr "Iniciales")")
   local -a files=()
   mkdir -p "$AVATAR_DIR/custom"
   mapfile -t files < <(find "$AVATAR_DIR" -maxdepth 2 -type f \
@@ -69,12 +100,12 @@ menu() {
   for f in "${files[@]}"; do
     choices+=("$(basename "$f")")
   done
-  choices+=("Imagen personalizada…")
+  choices+=("$(ui_tr "Imagen personalizada…")")
 
-  choice="$(printf '%s\n' "${choices[@]}" | rofi -dmenu -i -p "Avatar" -config "$ROFI_CONFIG")" || exit 0
+  choice="$(printf '%s\n' "${choices[@]}" | rofi -dmenu -i -p "Avatar" -config "$ROFI_CONFIG" -theme-str "entry { placeholder: \"$( [ "$UI_LANG" = en ] && echo Search || echo Buscar )\"; }")" || exit 0
   case "$choice" in
-    Iniciales) set_initials ;;
-    "Imagen personalizada…") choose_file ;;
+    "$(ui_tr "Iniciales")") set_initials ;;
+    "$(ui_tr "Imagen personalizada…")") choose_file ;;
     "") exit 0 ;;
     *)
       for f in "${files[@]}"; do
@@ -83,7 +114,7 @@ menu() {
           exit 0
         fi
       done
-      echo "Avatar no encontrado: $choice"
+      echo "$(ui_tr "Avatar no encontrado: %s" "$choice")"
       exit 1
       ;;
   esac

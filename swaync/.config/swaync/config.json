@@ -17,12 +17,32 @@
   "fit-to-screen": false,
   "hide-on-clear": true,
   "hide-on-action": true,
-  "widgets": ["title", "dnd", "mpris", "volume", "backlight", "notifications"],
+  "widgets": [
+    "title",
+    "dnd",
+    "mpris",
+    "volume",
+    "backlight",
+    "notifications"
+  ],
   "widget-config": {
-    "title": { "text": "Notificaciones", "clear-all-button": true, "button-text": "Borrar todo" },
-    "dnd": { "text": "No molestar" },
-    "mpris": { "image-size": 48, "image-radius": 12 },
-    "volume": { "label": "󰕾" },
-    "backlight": { "label": "󰃟" }
+    "title": {
+      "text": "Notificaciones",
+      "clear-all-button": true,
+      "button-text": "Borrar todo"
+    },
+    "dnd": {
+      "text": "No molestar"
+    },
+    "mpris": {
+      "image-size": 48,
+      "image-radius": 12
+    },
+    "volume": {
+      "label": "󰕾"
+    },
+    "backlight": {
+      "label": "󰃟"
+    }
   }
 }

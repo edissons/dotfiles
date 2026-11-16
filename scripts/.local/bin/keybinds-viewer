@@ -1,30 +1,54 @@
 #!/usr/bin/env bash
 set -u
 
-# keybinds-viewer — muestra atajos de Hyprland en rofi, en español.
-# Fuente dinámica: hyprctl binds -j. Enriquecimiento opcional desde configs
-# para resolver comandos de exec (Hyprland 0.57+ expone exec_cmd con arg numérico).
+# keybinds-viewer — shows Hyprland keybinds in rofi.
+# Dynamic source: hyprctl binds -j. Optional enrichment from configs to recover
+# exec commands (Hyprland 0.57+ exposes exec_cmd with a numeric arg).
+# UI language follows LC_MESSAGES/LANG (es/en).
 
 rofi_config="$HOME/dotfiles/rofi/.config/rofi/config.rasi"
-rofi_prompt="Atajos"
+
+lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${lang,,}" in en*) ui_lang="en" ;; *) ui_lang="es" ;; esac
+
+if [ "$ui_lang" = "en" ]; then
+  rofi_prompt="Keybinds"
+  placeholder="Search"
+  msg_no_hyprctl="hyprctl not found."
+  msg_no_jq="jq not found."
+  msg_binds_fail="Could not get keybinds (hyprctl binds -j failed)."
+  msg_binds_empty="No Hyprland keybinds found."
+  msg_format_fail="Could not format keybinds."
+  msg_none="No keybinds to display."
+else
+  rofi_prompt="Atajos"
+  placeholder="Buscar"
+  msg_no_hyprctl="No se encontró hyprctl."
+  msg_no_jq="No se encontró jq."
+  msg_binds_fail="No se pudieron obtener los atajos (hyprctl binds -j falló)."
+  msg_binds_empty="No se encontraron atajos de Hyprland."
+  msg_format_fail="No se pudieron formatear los atajos."
+  msg_none="No se generaron atajos para mostrar."
+fi
 
 show_error() {
   local msg="$1"
   if command -v rofi >/dev/null 2>&1; then
-    printf '%s\n' "$msg" | rofi -dmenu -p "$rofi_prompt" -config "$rofi_config" >/dev/null 2>&1 || true
+    printf '%s\n' "$msg" | rofi -dmenu -p "$rofi_prompt" -config "$rofi_config" \
+      -theme-str "entry { placeholder: \"${placeholder}\"; }" >/dev/null 2>&1 || true
   fi
   printf '%s\n' "$msg" >&2
   exit 1
 }
 
-command -v hyprctl >/dev/null 2>&1 || show_error "No se encontró hyprctl."
-command -v jq >/dev/null 2>&1 || show_error "No se encontró jq."
+command -v hyprctl >/dev/null 2>&1 || show_error "$msg_no_hyprctl"
+command -v jq >/dev/null 2>&1 || show_error "$msg_no_jq"
 
-binds_json=$(hyprctl binds -j 2>/dev/null) || show_error "No se pudieron obtener los atajos (hyprctl binds -j falló)."
-[ -n "$binds_json" ] && [ "$binds_json" != "[]" ] || show_error "No se encontraron atajos de Hyprland."
+binds_json=$(hyprctl binds -j 2>/dev/null) || show_error "$msg_binds_fail"
+[ -n "$binds_json" ] && [ "$binds_json" != "[]" ] || show_error "$msg_binds_empty"
 
-# --- Enriquecimiento: parsea configs para recuperar dispatcher/args de exec ---
-# Devuelve JSONL: {"modmask":N,"key":"K","mouse":bool,"bindtype":"bind*","dispatcher":"exec","arg":"comando..."}
+# --- Enrichment: parse configs to recover exec dispatcher/args ---
+# Emits JSONL: {"modmask":N,"key":"K","mouse":bool,"bindtype":"bind*","dispatcher":"exec","arg":"command..."}
 parse_config_binds() {
   local f
   for f in \
@@ -65,6 +89,8 @@ parse_config_binds() {
 enrich_json=$(parse_config_binds | jq -s '.' 2>/dev/null || printf '[]')
 
 jq_filter='
+  def L: $lang;
+  def t($es; $en): if L=="en" then $en else $es end;
   def hb($b): ((.modmask / $b | floor) % 2) == 1;
   def mods:
     [ (if hb(64) then "⊞" else empty end),
@@ -75,28 +101,28 @@ jq_filter='
   def normkey:
     . as $k |
     if   $k == "Return" then "Enter"
-    elif $k == "Delete" then "Supr"
-    elif $k == "Print"  then "Impr Pant"
+    elif $k == "Delete" then t("Supr"; "Del")
+    elif $k == "Print"  then t("Impr Pant"; "PrtSc")
     elif $k == "comma"  then ","
     elif $k == "left"   then "←"
     elif $k == "right"  then "→"
     elif $k == "up"     then "↑"
     elif $k == "down"   then "↓"
-    elif $k == "mouse:272" then "Clic izq."
-    elif $k == "mouse:273" then "Clic der."
-    elif $k == "mouse_down" then "Rueda ↓"
-    elif $k == "mouse_up"   then "Rueda ↑"
-    elif $k == "XF86AudioRaiseVolume" then "Subir volumen"
-    elif $k == "XF86AudioLowerVolume" then "Bajar volumen"
-    elif $k == "XF86AudioMute"        then "Silenciar"
-    elif $k == "XF86AudioMicMute"     then "Silenciar micrófono"
-    elif $k == "XF86MonBrightnessUp"  then "Subir brillo"
-    elif $k == "XF86MonBrightnessDown" then "Bajar brillo"
-    elif $k == "XF86AudioPlay"  then "Reproducir/pausar"
-    elif $k == "XF86AudioPause" then "Reproducir/pausar"
-    elif $k == "XF86AudioPlayPause" then "Reproducir/pausar"
-    elif $k == "XF86AudioNext"  then "Siguiente"
-    elif $k == "XF86AudioPrev"  then "Anterior"
+    elif $k == "mouse:272" then t("Clic izq."; "Left click")
+    elif $k == "mouse:273" then t("Clic der."; "Right click")
+    elif $k == "mouse_down" then t("Rueda ↓"; "Wheel ↓")
+    elif $k == "mouse_up"   then t("Rueda ↑"; "Wheel ↑")
+    elif $k == "XF86AudioRaiseVolume" then t("Subir volumen"; "Volume up")
+    elif $k == "XF86AudioLowerVolume" then t("Bajar volumen"; "Volume down")
+    elif $k == "XF86AudioMute"        then t("Silenciar"; "Mute")
+    elif $k == "XF86AudioMicMute"     then t("Silenciar micrófono"; "Mute microphone")
+    elif $k == "XF86MonBrightnessUp"  then t("Subir brillo"; "Brightness up")
+    elif $k == "XF86MonBrightnessDown" then t("Bajar brillo"; "Brightness down")
+    elif $k == "XF86AudioPlay"  then t("Reproducir/pausar"; "Play/pause")
+    elif $k == "XF86AudioPause" then t("Reproducir/pausar"; "Play/pause")
+    elif $k == "XF86AudioPlayPause" then t("Reproducir/pausar"; "Play/pause")
+    elif $k == "XF86AudioNext"  then t("Siguiente"; "Next track")
+    elif $k == "XF86AudioPrev"  then t("Anterior"; "Previous track")
     elif ($k | test("^XF86")) then ($k | sub("^XF86";"") | gsub("(?<a>[a-z])(?<b>[A-Z])"; .a+" "+.b))
     elif ($k | length) == 1 then ($k | ascii_upcase)
     else $k
@@ -108,55 +134,54 @@ jq_filter='
     | ascii_downcase;
 
   def dir_es:
-    if   . == "l" or . == "left"  then "izquierda"
-    elif . == "r" or . == "right" then "derecha"
-    elif . == "u" or . == "up"    then "arriba"
-    elif . == "d" or . == "down"  then "abajo"
+    if   . == "l" or . == "left"  then t("izquierda"; "left")
+    elif . == "r" or . == "right" then t("derecha"; "right")
+    elif . == "u" or . == "up"    then t("arriba"; "up")
+    elif . == "d" or . == "down"  then t("abajo"; "down")
     else . end;
 
   def shortcmd:
     . | gsub("\\$HOME"; "~") | gsub("/home/[^/]+"; "~")
       | if length > 60 then .[0:57] + "..." else . end;
 
-  # Busca enriquecimiento por modmask+key(+mouse) en configs parseadas
   def enrich($e):
     . as $b |
     ($e | map(select(.modmask == $b.modmask and (.key|ascii_downcase) == ($b.key|ascii_downcase) and (.mouse == ($b.mouse|not|not)) )) | .[0]) // null;
 
   def exec_desc($a):
     ($a // "") as $cmd |
-    if   ($cmd | test("\\bkitty\\b|\\$terminal\\b")) then "Abrir terminal"
-    elif ($cmd | test("rofi.*(drun|-show drun|drun)")) then "Abrir lanzador de apps"
-    elif ($cmd | test("theme-toggle")) then "Cambiar tema claro/oscuro"
-    elif ($cmd | test("waybar-restart")) then "Reiniciar Waybar"
-    elif ($cmd | test("wallpaper-select")) then "Elegir fondo de pantalla"
-    elif ($cmd | test("keybinds-viewer")) then "Ver atajos de teclado"
-    elif ($cmd | test("power-menu")) then "Abrir menú de energía"
-    elif ($cmd | test("dock-restart")) then "Reiniciar dock"
-    elif ($cmd | test("lock-screen")) then "Bloquear pantalla"
-    elif ($cmd | test("settings-menu")) then "Abrir ajustes"
-    elif ($cmd | test("swaync-client.*-t")) then "Abrir notificaciones"
-    elif ($cmd | test("\\bdolphin\\b")) then "Abrir gestor de archivos"
-    elif ($cmd | test("\\bbrave\\b")) then "Abrir navegador"
-    elif ($cmd | test("cliphist")) then "Abrir portapapeles"
-    elif ($cmd | test("\\bbtop\\b")) then "Abrir monitor del sistema"
-    elif ($cmd | test("pamixer.*--default-source.*-t|pamixer.*-t.*--default-source")) then "Silenciar/activar micrófono"
-    elif ($cmd | test("pamixer.*-i")) then "Subir volumen"
-    elif ($cmd | test("pamixer.*-d")) then "Bajar volumen"
-    elif ($cmd | test("pamixer.*-t")) then "Silenciar/activar volumen"
-    elif ($cmd | test("brightnessctl.*\\+|brightnessctl.*set.*\\+[0-9]")) then "Subir brillo"
-    elif ($cmd | test("brightnessctl.*-|brightnessctl.*set.*[0-9]+%-")) then "Bajar brillo"
-    elif ($cmd | test("playerctl.*play-pause")) then "Reproducir/pausar"
-    elif ($cmd | test("playerctl.*next")) then "Siguiente pista"
-    elif ($cmd | test("playerctl.*previous|playerctl.*prev")) then "Pista anterior"
-    elif ($cmd | test("playerctl")) then "Control multimedia"
-    elif ($cmd | test("grim.*slurp.*wl-copy")) then "Captura de área al portapapeles"
-    elif ($cmd | test("grim.*slurp.*Screenshots")) then "Captura de área a archivo"
-    elif ($cmd | test("grim.*Screenshots")) then "Captura de pantalla a archivo"
-    elif ($cmd | test("grim.*slurp")) then "Captura de área"
-    elif ($cmd | test("^[0-9]+$")) then "Ejecutar comando"
-    elif ($cmd | length) > 0 then "Ejecutar: " + ($cmd | shortcmd)
-    else "Ejecutar comando"
+    if   ($cmd | test("\\bkitty\\b|\\$terminal\\b")) then t("Abrir terminal"; "Open terminal")
+    elif ($cmd | test("rofi.*(drun|-show drun|drun)|rofi-drun")) then t("Abrir lanzador de apps"; "Open app launcher")
+    elif ($cmd | test("theme-toggle")) then t("Cambiar tema claro/oscuro"; "Toggle light/dark theme")
+    elif ($cmd | test("waybar-restart")) then t("Reiniciar Waybar"; "Restart Waybar")
+    elif ($cmd | test("wallpaper-select")) then t("Elegir fondo de pantalla"; "Choose wallpaper")
+    elif ($cmd | test("keybinds-viewer")) then t("Ver atajos de teclado"; "Show keybinds")
+    elif ($cmd | test("power-menu")) then t("Abrir menú de energía"; "Open power menu")
+    elif ($cmd | test("dock-restart")) then t("Reiniciar dock"; "Restart dock")
+    elif ($cmd | test("lock-screen|hyprlock|lock-session")) then t("Bloquear pantalla"; "Lock screen")
+    elif ($cmd | test("settings-menu")) then t("Abrir ajustes"; "Open settings")
+    elif ($cmd | test("swaync-client.*-t|swaync-run")) then t("Abrir notificaciones"; "Open notifications")
+    elif ($cmd | test("\\bdolphin\\b")) then t("Abrir gestor de archivos"; "Open file manager")
+    elif ($cmd | test("\\bbrave\\b|\\bfirefox\\b")) then t("Abrir navegador"; "Open browser")
+    elif ($cmd | test("cliphist")) then t("Abrir portapapeles"; "Open clipboard")
+    elif ($cmd | test("\\bbtop\\b")) then t("Abrir monitor del sistema"; "Open system monitor")
+    elif ($cmd | test("pamixer.*--default-source.*-t|pamixer.*-t.*--default-source")) then t("Silenciar/activar micrófono"; "Toggle microphone mute")
+    elif ($cmd | test("pamixer.*-i")) then t("Subir volumen"; "Volume up")
+    elif ($cmd | test("pamixer.*-d")) then t("Bajar volumen"; "Volume down")
+    elif ($cmd | test("pamixer.*-t")) then t("Silenciar/activar volumen"; "Toggle mute")
+    elif ($cmd | test("brightnessctl.*\\+|brightnessctl.*set.*\\+[0-9]")) then t("Subir brillo"; "Brightness up")
+    elif ($cmd | test("brightnessctl.*-|brightnessctl.*set.*[0-9]+%-")) then t("Bajar brillo"; "Brightness down")
+    elif ($cmd | test("playerctl.*play-pause")) then t("Reproducir/pausar"; "Play/pause")
+    elif ($cmd | test("playerctl.*next")) then t("Siguiente pista"; "Next track")
+    elif ($cmd | test("playerctl.*previous|playerctl.*prev")) then t("Pista anterior"; "Previous track")
+    elif ($cmd | test("playerctl")) then t("Control multimedia"; "Media control")
+    elif ($cmd | test("grim.*slurp.*wl-copy")) then t("Captura de área al portapapeles"; "Area screenshot to clipboard")
+    elif ($cmd | test("grim.*slurp.*Screenshots")) then t("Captura de área a archivo"; "Area screenshot to file")
+    elif ($cmd | test("grim.*Screenshots")) then t("Captura de pantalla a archivo"; "Screenshot to file")
+    elif ($cmd | test("grim.*slurp")) then t("Captura de área"; "Area screenshot")
+    elif ($cmd | test("^[0-9]+$")) then t("Ejecutar comando"; "Run command")
+    elif ($cmd | length) > 0 then t("Ejecutar: "; "Run: ") + ($cmd | shortcmd)
+    else t("Ejecutar comando"; "Run command")
     end;
 
   def action_desc($en):
@@ -164,49 +189,51 @@ jq_filter='
     ($en.dispatcher // "") as $ed | ($en.arg // "") as $ea |
     if ($d | test("^exec")) then
       if ($ea | length) > 0 then exec_desc($ea) else exec_desc($a) end
-    elif ($d == "close" or $d == "killactive") then "Cerrar ventana"
-    elif ($d == "fullscreen") then "Pantalla completa"
-    elif ($d == "togglefloating" or $d == "float") then "Ventana flotante/normal"
-    elif ($d == "exit") then "Salir de Hyprland"
+    elif ($d == "close" or $d == "killactive") then t("Cerrar ventana"; "Close window")
+    elif ($d == "fullscreen") then t("Pantalla completa"; "Fullscreen")
+    elif ($d == "togglefloating" or $d == "float") then t("Ventana flotante/normal"; "Toggle floating")
+    elif ($d == "exit") then t("Salir de Hyprland"; "Exit Hyprland")
     elif ($d == "movefocus" or $d == "focuswindow" or ($d == "focus" and ($ea == "l" or $ea == "r" or $ea == "u" or $ea == "d" or $a == "l" or $a == "r" or $a == "u" or $a == "d"))) then
-      "Mover foco " + (($ea | if length>0 then . else $a end) | dir_es)
+      t("Mover foco "; "Move focus ") + (($ea | if length>0 then . else $a end) | dir_es)
     elif ($d | test("workspace|focusworkspace")) then
       (($ea | if length>0 then . else $a end) | ascii_downcase) as $w |
-      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then "Escritorio siguiente"
-      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then "Escritorio anterior"
-      elif ($w | test("^[0-9]+$")) then "Ir al escritorio " + $w
-      else "Ir al escritorio " + $w
+      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then t("Escritorio siguiente"; "Next workspace")
+      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then t("Escritorio anterior"; "Previous workspace")
+      elif ($w | test("^[0-9]+$")) then t("Ir al escritorio "; "Go to workspace ") + $w
+      else t("Ir al escritorio "; "Go to workspace ") + $w
       end
     elif ($d == "focus") then
       (($ea | if length>0 then . else $a end) | ascii_downcase) as $w |
-      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then "Escritorio siguiente"
-      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then "Escritorio anterior"
-      elif ($w | test("^[0-9]+$")) then "Ir al escritorio " + $w
-      elif ($w == "l" or $w == "r" or $w == "u" or $w == "d" or $w == "left" or $w == "right" or $w == "up" or $w == "down") then "Mover foco " + ($w | dir_es)
-      else "Acción: focus " + $w
+      if ($w == "e+1" or $w == "+1" or $w == "r+1" or $w == "m+1") then t("Escritorio siguiente"; "Next workspace")
+      elif ($w == "e-1" or $w == "-1" or $w == "r-1" or $w == "m-1") then t("Escritorio anterior"; "Previous workspace")
+      elif ($w | test("^[0-9]+$")) then t("Ir al escritorio "; "Go to workspace ") + $w
+      elif ($w == "l" or $w == "r" or $w == "u" or $w == "d" or $w == "left" or $w == "right" or $w == "up" or $w == "down") then t("Mover foco "; "Move focus ") + ($w | dir_es)
+      else t("Acción: focus "; "Action: focus ") + $w
       end
     elif ($d | test("movetoworkspace")) then
       (($ea | if length>0 then . else $a end)) as $w |
-      if ($w | test("^[0-9]+$")) then "Mover ventana al escritorio " + $w else "Mover ventana al escritorio " + $w end
-    elif ($d == "move" and ($en.bindtype // "") == "bindm") then "Arrastrar ventana"
+      if ($w | test("^[0-9]+$")) then t("Mover ventana al escritorio "; "Move window to workspace ") + $w
+      else t("Mover ventana al escritorio "; "Move window to workspace ") + $w end
+    elif ($d == "move" and ($en.bindtype // "") == "bindm") then t("Arrastrar ventana"; "Drag window")
     elif ($d == "movewindow" or $d == "move" or $d == "movewindowpixel") then
       (($ea | if length>0 then . else $a end)) as $v |
-      if ($v == "l" or $v == "r" or $v == "u" or $v == "d") then "Mover ventana " + ($v | dir_es)
-      elif ($v | test("^[0-9]")) then "Mover ventana al escritorio " + $v
-      else "Mover ventana"
+      if ($v == "l" or $v == "r" or $v == "u" or $v == "d") then t("Mover ventana "; "Move window ") + ($v | dir_es)
+      elif ($v | test("^[0-9]")) then t("Mover ventana al escritorio "; "Move window to workspace ") + $v
+      else t("Mover ventana"; "Move window")
       end
-    elif ($d == "resize" and ($en.bindtype // "") == "bindm") then "Redimensionar ventana"
-    elif ($d | test("resizeactive|resizewindow|resize")) then "Redimensionar ventana"
-    elif ($d == "drag") then "Arrastrar ventana"
+    elif ($d == "resize" and ($en.bindtype // "") == "bindm") then t("Redimensionar ventana"; "Resize window")
+    elif ($d | test("resizeactive|resizewindow|resize")) then t("Redimensionar ventana"; "Resize window")
+    elif ($d == "drag") then t("Arrastrar ventana"; "Drag window")
     elif ($d == "layout" or $d == "layoutmsg") then
       (($ea | if length>0 then . else $a end)) as $la |
-      if ($la | test("togglesplit")) then "Alternar división"
-      else "Acción: " + $d + " " + $la
+      if ($la | test("togglesplit")) then t("Alternar división"; "Toggle split")
+      else t("Acción: "; "Action: ") + $d + " " + $la
       end
-    elif ($d == "togglesplit") then "Alternar división"
+    elif ($d == "togglesplit") then t("Alternar división"; "Toggle split")
     else
       (($ea | if length>0 then . else $a end)) as $fa |
-      if ($fa | length) > 0 then "Acción: " + $d + " " + ($fa | shortcmd) else "Acción: " + $d end
+      if ($fa | length) > 0 then t("Acción: "; "Action: ") + $d + " " + ($fa | shortcmd)
+      else t("Acción: "; "Action: ") + $d end
     end;
 
   .[] | . as $b | (enrich($enrich) // {}) as $en |
@@ -214,9 +241,10 @@ jq_filter='
     ($shortcut + "  —  " + action_desc($en))
 '
 
-output=$(printf '%s' "$binds_json" | jq -r --argjson enrich "$enrich_json" "$jq_filter" 2>/dev/null) \
-  || show_error "No se pudieron formatear los atajos."
+output=$(printf '%s' "$binds_json" | jq -r --argjson enrich "$enrich_json" --arg lang "$ui_lang" "$jq_filter" 2>/dev/null) \
+  || show_error "$msg_format_fail"
 
-[ -n "$output" ] || show_error "No se generaron atajos para mostrar."
+[ -n "$output" ] || show_error "$msg_none"
 
-printf '%s\n' "$output" | rofi -dmenu -i -p "$rofi_prompt" -config "$rofi_config" >/dev/null 2>&1 || true
+printf '%s\n' "$output" | rofi -dmenu -i -p "$rofi_prompt" -config "$rofi_config" \
+  -theme-str "entry { placeholder: \"${placeholder}\"; }" >/dev/null 2>&1 || true

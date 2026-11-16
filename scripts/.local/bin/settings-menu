@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import glob
 import os
+import re
+import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import gi
@@ -22,7 +25,117 @@ THEME_CSS = HOME / ".config/theme/current.css"
 APPEARANCE = HOME / ".local/bin/appearance"
 SDDM_THEME_CONF = Path("/usr/share/sddm/themes/glass/theme.conf")
 
+# Language & Input: the only privileged component is this helper.  The menu
+# itself stays unprivileged and calls it through pkexec/sudo (polkit rule
+# 90-localeinput.rules).  The repo path is a development fallback, exactly like
+# powermodemenu.py does.
+LOCALE_HELPER_INSTALLED = Path("/usr/local/lib/localeinput/locale-input-helper")
+LOCALE_HELPER_REPO = REPO / "scripts/.local/lib/localeinput/locale-input-helper"
+EVDEV_LST = Path("/usr/share/X11/xkb/rules/evdev.lst")
+SUPPORTED_LOCALES = Path("/usr/share/i18n/SUPPORTED")
+LOCALE_GEN = Path("/etc/locale.gen")
+USERPREFS_CONF = HOME / ".config/hypr/userprefs.conf"
+USERPREFS_LUA = HOME / ".config/hypr/userprefs.lua"
+DRY_RUN = os.environ.get("LOCALEINPUT_DRY_RUN", "") == "1"
+
 INTERVALS = ["5", "10", "15", "30", "60"]
+
+# Translation strategy: one dictionary in this file, keyed by the Spanish
+# string that already exists in the menu.  The menu is a single script with no
+# gettext domain or .mo catalog, so a dictionary is the smallest approach that
+# keeps every string in one place and needs no build step.  If the interface
+# language is English, tr() looks the Spanish text up; otherwise it returns the
+# Spanish text unchanged.
+def interface_language():
+    value = (
+        os.environ.get("LC_ALL")
+        or os.environ.get("LC_MESSAGES")
+        or os.environ.get("LANG")
+        or ""
+    )
+    return "en" if value.lower().startswith("en") else "es"
+
+
+UI_LANG = interface_language()
+
+STRINGS_EN = {
+    # Existing menu
+    "Ajustes": "Settings",
+    "Pulsa Enter para cerrar ": "Press Enter to close ",
+    "FONDOS": "WALLPAPER",
+    "Fondo de escritorio": "Desktop wallpaper",
+    "Carpeta de fondos": "Wallpaper folder",
+    "Carrusel de fondos": "Wallpaper carousel",
+    "Intervalo del carrusel": "Carousel interval",
+    "BLOQUEO E INICIO DE SESIÓN": "LOCK & LOGIN",
+    "Fondo de la pantalla de bloqueo": "Lock screen background",
+    "Fondo del inicio de sesión": "Login screen background",
+    "Desenfoque del bloqueo": "Lock screen blur",
+    "Desenfoque del inicio de sesión": "Login screen blur",
+    "INTERFAZ": "INTERFACE",
+    "Barra y dock": "Bar and dock",
+    "Aplicaciones del dock": "Dock applications",
+    "SISTEMA Y PERFIL": "SYSTEM & PROFILE",
+    "Avatar de perfil": "Profile avatar",
+    "Modo bajo consumo": "Low power mode",
+    "Fondo de bloqueo": "Lock background",
+    "Fondo del login": "Login background",
+    # Language & Input
+    "IDIOMA Y ENTRADA": "LANGUAGE & INPUT",
+    "Idioma del sistema": "System language",
+    "Idioma actual: {}": "Current language: {}",
+    "Añadir idioma…": "Add language…",
+    "Añadir idioma": "Add language",
+    "Buscar idioma…": "Search language…",
+    "ya instalado": "already installed",
+    "Cancelar": "Cancel",
+    "Añadir": "Add",
+    "Generando {}…": "Generating {}…",
+    "Idioma {} añadido. Ya puedes seleccionarlo.": "Language {} added. You can now select it.",
+    "Error al añadir {}: {}": "Error adding {}: {}",
+    "Aplicando {}…": "Applying {}…",
+    "Idioma aplicado. Cierra sesión para que las aplicaciones lo usen.": "Language applied. Log out for applications to use it.",
+    "Error al aplicar {}: {}": "Error applying {}: {}",
+    "Cerrar sesión ahora": "Log out now",
+    "El idioma se aplica al sistema; la interfaz cambiará tras reiniciar sesión.": "The language applies to the system; the interface changes after logging out.",
+    "Paquetes de idioma": "Language packages",
+    "Instalar paquetes seleccionados": "Install selected packages",
+    "Ahora no": "Not now",
+    "No hay paquetes de idioma disponibles para {}.": "No language packages available for {}.",
+    "Instalando paquetes…": "Installing packages…",
+    "Paquetes instalados.": "Packages installed.",
+    "Error al instalar paquetes: {}": "Error installing packages: {}",
+    "Distribuciones de teclado": "Keyboard layouts",
+    "Añadir distribución…": "Add layout…",
+    "Añadir distribución": "Add layout",
+    "Buscar distribución…": "Search layout…",
+    "Actual": "Current",
+    "Subir": "Move up",
+    "Bajar": "Move down",
+    "Eliminar": "Remove",
+    "Al menos una distribución debe permanecer.": "At least one layout must remain.",
+    "Atajo para cambiar": "Switch shortcut",
+    "Ninguno": "None",
+    "Probar teclado": "Test keyboard",
+    "Escribe aquí…": "Type here…",
+    "Aplicando teclado…": "Applying keyboard…",
+    "Distribuciones aplicadas: {}": "Layouts applied: {}",
+    "Error al aplicar el teclado: {}": "Error applying keyboard: {}",
+    "No se encontró {}; instala el paquete {}.": "{} not found; install the {} package.",
+    "No se pudo leer {}.": "Could not read {}.",
+    "La distribución {} ya está en la lista.": "Layout {} is already in the list.",
+    "Este locale no está generado. Añádelo con «Añadir idioma…».": "This locale is not generated. Add it with “Add language…”.",
+    "El helper no está instalado. Ejecuta install.sh con --with-localeinput.": "Helper is not installed. Run install.sh with --with-localeinput.",
+    "Sin permiso o error del helper.": "No permission or helper error.",
+    "No se pudo verificar el layout activo con hyprctl.": "Could not verify the active layout with hyprctl.",
+    "hyprctl no está disponible.": "hyprctl is not available.",
+    "No hay distribuciones activas.": "No active layouts.",
+}
+
+
+def tr(text):
+    return STRINGS_EN.get(text, text) if UI_LANG == "en" else text
+
 
 
 def appearance_get(key, default):
@@ -67,11 +180,11 @@ def run_term(command_str):
             [
                 "kitty",
                 "--title",
-                "Ajustes",
+                tr("Ajustes"),
                 "-e",
                 "bash",
                 "-c",
-                command_str + '; echo; read -rp "Pulsa Enter para cerrar "',
+                command_str + '; echo; read -rp "' + tr("Pulsa Enter para cerrar ") + '"',
             ],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
@@ -96,6 +209,409 @@ def sddm_install_term(value=None):
     mode = sddm_mode()
     target = value if value is not None else mode
     run_term(f"{HOME / '.local/bin/sddm-install'} {target}")
+
+
+# ---------------------------------------------------------------------------
+# Language & Input helpers
+# ---------------------------------------------------------------------------
+
+def helper_path():
+    if LOCALE_HELPER_INSTALLED.is_file():
+        return str(LOCALE_HELPER_INSTALLED)
+    if LOCALE_HELPER_REPO.is_file():
+        return str(LOCALE_HELPER_REPO)
+    return None
+
+
+def run_helper(args, dry_run=False, timeout=300):
+    """Call the privileged helper as the user, never as root.
+
+    Order: pkexec (polkit rule, no prompt for wheel), sudo -n (optional
+    NOPASSWD drop-in), then direct (works for --status/--dry-run and for a
+    developer running the repo helper manually).
+    """
+    hp = helper_path()
+    if not hp:
+        return 127, "", tr("El helper no está instalado. Ejecuta install.sh con --with-localeinput.")
+    cmd = [hp, *args]
+    if dry_run:
+        cmd.append("--dry-run")
+        # Dry-run never needs root: run the helper directly so the UI can be
+        # tested without a polkit prompt or an authentication agent.
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+            return result.returncode, result.stdout or "", result.stderr or ""
+        except (OSError, subprocess.SubprocessError) as exc:
+            return 1, "", str(exc)
+    last = (1, "", "")
+    for prefix in (["pkexec"], ["sudo", "-n"], []):
+        if prefix and not shutil.which(prefix[0]):
+            continue
+        try:
+            result = subprocess.run(
+                prefix + cmd, capture_output=True, text=True, timeout=timeout
+            )
+            last = (result.returncode, result.stdout or "", result.stderr or "")
+            if prefix and result.returncode in (126, 127):
+                continue
+            return last
+        except (OSError, subprocess.SubprocessError) as exc:
+            last = (1, "", str(exc))
+    return last
+
+
+def run_helper_async(args, callback, dry_run=False, timeout=300):
+    """Run the helper off the GTK thread and deliver the result via idle_add."""
+    def worker():
+        result = run_helper(args, dry_run=dry_run, timeout=timeout)
+        GLib.idle_add(callback, *result)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def read_localectl():
+    try:
+        out = subprocess.check_output(
+            ["localectl", "status"], text=True, stderr=subprocess.DEVNULL, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return {}
+    data = {}
+    for line in out.splitlines():
+        if ":" in line:
+            key, value = line.split(":", 1)
+            data[key.strip()] = value.strip()
+    return data
+
+
+def normalize_locale(locale):
+    value = (locale or "").strip()
+    return re.sub(r"\.utf-?8$", ".UTF-8", value, flags=re.IGNORECASE)
+
+
+def generated_locales():
+    try:
+        out = subprocess.check_output(
+            ["locale", "-a"], text=True, stderr=subprocess.DEVNULL, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return set()
+    result = set()
+    for line in out.splitlines():
+        value = normalize_locale(line)
+        if value and value not in ("C", "POSIX", "C.UTF-8"):
+            result.add(value)
+    return result
+
+
+def current_system_locale():
+    status = read_localectl()
+    value = status.get("System Locale", "")
+    match = re.search(r"LANG=([^\s]+)", value)
+    return normalize_locale(match.group(1)) if match else ""
+
+
+def locale_name(locale):
+    names = {
+        "en_US.UTF-8": "English (US)",
+        "en_GB.UTF-8": "English (UK)",
+        "es_CO.UTF-8": "Español (Colombia)",
+        "es_MX.UTF-8": "Español (México)",
+        "es_ES.UTF-8": "Español (España)",
+        "es_AR.UTF-8": "Español (Argentina)",
+        "es_CL.UTF-8": "Español (Chile)",
+    }
+    name = names.get(locale)
+    return f"{locale} — {name}" if name else locale
+
+
+def supported_locale_entries():
+    try:
+        lines = SUPPORTED_LOCALES.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    entries = []
+    for raw in lines:
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split()
+        if len(parts) >= 2:
+            entries.append((parts[0], parts[1]))
+    return entries
+
+
+def parse_evdev():
+    """Read the ! layout and ! option sections of evdev.lst.
+
+    The first occurrence of a code is the canonical description; later ones are
+    aliases such as "us  ba: Bosnian (US)".
+    """
+    try:
+        text = EVDEV_LST.read_text(encoding="utf-8")
+    except OSError:
+        return {}, {}
+    layouts, options = {}, {}
+    section = None
+    for raw in text.splitlines():
+        line = raw.rstrip()
+        if line.startswith("!"):
+            section = line[1:].strip()
+            continue
+        if section not in ("layout", "option") or not line.startswith("  "):
+            continue
+        parts = line.strip().split(None, 1)
+        if not parts:
+            continue
+        code = parts[0]
+        desc = parts[1] if len(parts) > 1 else code
+        if section == "layout":
+            layouts.setdefault(code, desc)
+        else:
+            options.setdefault(code, desc)
+    return layouts, options
+
+
+def package_exists(package):
+    if not shutil.which("pacman"):
+        return False
+    try:
+        result = subprocess.run(
+            ["pacman", "-Si", package],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=20,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def candidate_packages(locale):
+    """Real language-pack candidates for a locale, filtered by pacman -Si."""
+    base = locale.split(".", 1)[0]
+    lang, _, territory = base.partition("_")
+    territory = territory.lower()
+    candidates = []
+    if lang == "es":
+        if territory:
+            candidates.append(f"hunspell-es_{territory}")
+        candidates.extend(
+            [
+                "hunspell-es_any",
+                "mythes-es",
+                "hyphen-es",
+                f"firefox-i18n-es-{territory or 'es'}",
+                "firefox-i18n-es-es",
+                "thunderbird-i18n-es-es",
+                "libreoffice-still-es",
+            ]
+        )
+    elif lang == "en":
+        if territory:
+            candidates.append(f"hunspell-en_{territory}")
+        candidates.extend(
+            [
+                "hunspell-en_us",
+                "mythes-en",
+                "hyphen-en",
+                "libreoffice-still-en-us",
+            ]
+        )
+    else:
+        candidates.extend(
+            [
+                f"hunspell-{lang}",
+                f"mythes-{lang}",
+                f"hyphen-{lang}",
+                f"firefox-i18n-{lang}",
+                f"libreoffice-still-{lang}",
+            ]
+        )
+    result, seen = [], set()
+    for package in candidates:
+        if package in seen:
+            continue
+        seen.add(package)
+        if package_exists(package):
+            result.append(package)
+    return result
+
+
+def replace_marked_block(text, begin, end, block):
+    """Remove every existing marked block and append exactly one new block."""
+    lines = text.splitlines()
+    kept, skipping = [], False
+    for line in lines:
+        if line.strip() == begin:
+            skipping = True
+            continue
+        if skipping:
+            if line.strip() == end:
+                skipping = False
+            continue
+        kept.append(line)
+    while kept and not kept[-1].strip():
+        kept.pop()
+    if kept:
+        kept.append("")
+    kept.extend(block.splitlines())
+    return "\n".join(kept).rstrip("\n") + "\n"
+
+
+def write_language_input_block(layouts, options):
+    """Persist the live layout in the user's own marked block.
+
+    Both files are written because HyDE can be running either the legacy .conf
+    or the Lua provider.  Only the marked block is replaced; the rest of the
+    file is left byte-for-byte intact.
+    """
+    layout_str = ",".join(layouts)
+    options_str = ",".join(options)
+    conf_block = "\n".join(
+        [
+            "# >>> language-input >>>",
+            "# Managed by Settings -> Language & Input (Glasshouse).",
+            "# This block is replaced on every change; do not edit it by hand.",
+            "input {",
+            f"    kb_layout = {layout_str}",
+            f"    kb_options = {options_str}".rstrip(),
+            "}",
+            "# <<< language-input <<<",
+        ]
+    )
+    lua_block = "\n".join(
+        [
+            "-- >>> language-input >>>",
+            "-- Managed by Settings -> Language & Input (Glasshouse).",
+            "-- This block is replaced on every change; do not edit it by hand.",
+            "hl.config({",
+            "    input = {",
+            f'        kb_layout = "{layout_str}",',
+            f'        kb_options = "{options_str}",',
+            "    },",
+            "})",
+            "-- <<< language-input <<<",
+        ]
+    )
+    written = []
+    for path, begin, end, block in (
+        (USERPREFS_CONF, "# >>> language-input >>>", "# <<< language-input <<<", conf_block),
+        (USERPREFS_LUA, "-- >>> language-input >>>", "-- <<< language-input <<<", lua_block),
+    ):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+            updated = replace_marked_block(text, begin, end, block)
+            if DRY_RUN:
+                print(f"[dry-run] write {path}:\n{block}")
+            else:
+                path.write_text(updated, encoding="utf-8")
+            written.append(path)
+        except OSError as exc:
+            print(f"settings-menu: cannot write {path}: {exc}", file=sys.stderr)
+    return written
+
+
+def hypr_getoption(name):
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "getoption", name],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for line in out.splitlines():
+        if line.startswith("str:"):
+            value = line.split(":", 1)[1].strip()
+            return "" if value == "[[EMPTY]]" else value
+    return ""
+
+
+def hypr_active_layout_index():
+    try:
+        out = subprocess.check_output(
+            ["hyprctl", "-j", "devices"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+        import json
+
+        data = json.loads(out)
+        for keyboard in data.get("keyboards", []):
+            if keyboard.get("main"):
+                return int(keyboard.get("active_layout_index", 0))
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        pass
+    return 0
+
+
+def read_hypr_keyboard():
+    layouts = [
+        item.strip()
+        for item in hypr_getoption("input:kb_layout").split(",")
+        if item.strip()
+    ]
+    options = [
+        item.strip()
+        for item in hypr_getoption("input:kb_options").split(",")
+        if item.strip()
+    ]
+    if not layouts:
+        layouts = ["us"]
+    return layouts, options, hypr_active_layout_index()
+
+
+def hypr_apply_keyboard(layouts, options):
+    """Apply the layout live.
+
+    Hyprland 0.57 (Lua config provider) rejects `hyprctl keyword` with
+    "unknown request"; `hyprctl eval` with hl.config() works.  Older hyprlang
+    versions use `hyprctl keyword`, so both are tried.
+    """
+    if not shutil.which("hyprctl"):
+        return False, tr("hyprctl no está disponible.")
+    layout_str = ",".join(layouts)
+    options_str = ",".join(options)
+    code = (
+        'hl.config({ input = { kb_layout = "'
+        + layout_str
+        + '", kb_options = "'
+        + options_str
+        + '" } })'
+    )
+    try:
+        result = subprocess.run(
+            ["hyprctl", "eval", code], capture_output=True, text=True, timeout=10
+        )
+        output = ((result.stdout or "") + (result.stderr or "")).strip()
+        lowered = output.lower()
+        if result.returncode == 0 and "error" not in lowered and "unknown request" not in lowered:
+            return True, ""
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+    # Fallback for hyprlang-based versions.
+    last_error = ""
+    for key, value in (("input:kb_layout", layout_str), ("input:kb_options", options_str)):
+        try:
+            result = subprocess.run(
+                ["hyprctl", "keyword", key, value],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            output = ((result.stdout or "") + (result.stderr or "")).strip()
+            last_error = output
+            if result.returncode != 0 or "unknown request" in output.lower() or output.lower().startswith("error"):
+                return False, output or tr("No se pudo verificar el layout activo con hyprctl.")
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, str(exc)
+    return True, last_error
 
 
 def load_css(path, priority):
@@ -123,11 +639,22 @@ def load_css(path, priority):
 
 class SettingsPanel(Gtk.ApplicationWindow):
     def __init__(self, app):
-        super().__init__(application=app, title="Ajustes")
-        self.set_default_size(520, 720)
+        super().__init__(application=app, title=tr("Ajustes"))
+        self.set_default_size(520, 780)
         self.get_style_context().add_class("settings-window")
 
         self.loading = True
+        self.lang_applying = False
+        self.kb_applying = False
+        self.kb_pending = False
+        self.current_locale = current_system_locale()
+        self.locales = sorted(generated_locales())
+        if self.current_locale and self.current_locale not in self.locales:
+            self.locales.append(self.current_locale)
+        self.layouts, self.kb_options, self.active_layout_index = read_hypr_keyboard()
+        self.evdev_layouts, self.evdev_options = parse_evdev()
+        self.package_cache = {}
+
         self.build_chrome()
         self.populate_body()
 
@@ -138,7 +665,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
         header = Gtk.HeaderBar()
         header.set_show_close_button(True)
         header.get_style_context().add_class("settings-header")
-        title = Gtk.Label(label="Ajustes")
+        title = Gtk.Label(label=tr("Ajustes"))
         title.get_style_context().add_class("settings-title")
         header.set_custom_title(title)
         self.set_titlebar(header)
@@ -154,26 +681,37 @@ class SettingsPanel(Gtk.ApplicationWindow):
         self.add(scroller)
 
     def populate_body(self):
-        self.surface.pack_start(self.section_title("FONDOS"), False, False, 0)
+        self.surface.pack_start(self.section_title(tr("FONDOS")), False, False, 0)
         self.surface.pack_start(self.wallpaper_row(), False, False, 0)
         self.surface.pack_start(self.wallpaper_dir_row(), False, False, 0)
         self.surface.pack_start(self.carousel_row(), False, False, 0)
         self.surface.pack_start(self.carousel_interval_row(), False, False, 0)
 
         self.surface.pack_start(
-            self.section_title("BLOQUEO E INICIO DE SESIÓN"), False, False, 0
+            self.section_title(tr("BLOQUEO E INICIO DE SESIÓN")), False, False, 0
         )
         self.surface.pack_start(self.lock_bg_row(), False, False, 0)
         self.surface.pack_start(self.sddm_bg_row(), False, False, 0)
         self.surface.pack_start(self.lock_blur_row(), False, False, 0)
         self.surface.pack_start(self.sddm_blur_row(), False, False, 0)
 
-        self.surface.pack_start(self.section_title("INTERFAZ"), False, False, 0)
+        self.surface.pack_start(self.section_title(tr("INTERFAZ")), False, False, 0)
         self.surface.pack_start(self.waybar_row(), False, False, 0)
         self.surface.pack_start(self.dock_apps_row(), False, False, 0)
 
+        # --- Language & Input ---
         self.surface.pack_start(
-            self.section_title("SISTEMA Y PERFIL"), False, False, 0
+            self.section_title(tr("IDIOMA Y ENTRADA")), False, False, 0
+        )
+        self.surface.pack_start(self.language_row(), False, False, 0)
+        self.surface.pack_start(self.add_language_row(), False, False, 0)
+        self.surface.pack_start(self.keyboard_header_row(), False, False, 0)
+        self.surface.pack_start(self.layouts_box(), False, False, 0)
+        self.surface.pack_start(self.layout_toggle_row(), False, False, 0)
+        self.surface.pack_start(self.keyboard_test_row(), False, False, 0)
+
+        self.surface.pack_start(
+            self.section_title(tr("SISTEMA Y PERFIL")), False, False, 0
         )
         self.surface.pack_start(self.avatar_row(), False, False, 0)
         self.surface.pack_start(self.low_end_row(), False, False, 0)
@@ -250,7 +788,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
 
     # --- FONDOS ---
     def wallpaper_row(self):
-        row, _label, _chevron = self.action_row("Fondo de escritorio")
+        row, _label, _chevron = self.action_row(tr("Fondo de escritorio"))
         return self.make_clickable_row(
             row, lambda: run_bg([str(HOME / ".local/bin/wallpaper-select")])
         )
@@ -261,7 +799,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
 
         text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         text_box.set_hexpand(True)
-        title = Gtk.Label(label="Carpeta de fondos", xalign=0)
+        title = Gtk.Label(label=tr("Carpeta de fondos"), xalign=0)
         title.set_ellipsize(Pango.EllipsizeMode.END)
         self.wallpaper_dir_label = Gtk.Label(xalign=0)
         self.wallpaper_dir_label.set_ellipsize(Pango.EllipsizeMode.MIDDLE)
@@ -287,7 +825,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
         if self.loading:
             return
         dialog = Gtk.FileChooserDialog(
-            title="Carpeta de fondos",
+            title=tr("Carpeta de fondos"),
             parent=self,
             action=Gtk.FileChooserAction.SELECT_FOLDER,
         )
@@ -312,7 +850,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
         dialog.destroy()
 
     def carousel_row(self):
-        row, switch = self.switch_row("Carrusel de fondos")
+        row, switch = self.switch_row(tr("Carrusel de fondos"))
         switch.set_active(appearance_get("wallpaper_carousel", "off") == "on")
         switch.connect("notify::active", self.on_carousel_toggled)
         return row
@@ -326,7 +864,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
     def carousel_interval_row(self):
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         row.get_style_context().add_class("setting-row")
-        label = Gtk.Label(label="Intervalo del carrusel", xalign=0)
+        label = Gtk.Label(label=tr("Intervalo del carrusel"), xalign=0)
         label.set_hexpand(True)
         row.pack_start(label, True, True, 0)
 
@@ -353,7 +891,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
 
     # --- BLOQUEO E INICIO DE SESIÓN ---
     def lock_bg_row(self):
-        row, _label, _chevron = self.action_row("Fondo de la pantalla de bloqueo")
+        row, _label, _chevron = self.action_row(tr("Fondo de la pantalla de bloqueo"))
         return self.make_clickable_row(row, self.on_pick_lock_bg)
 
     def on_pick_lock_bg(self, *_args):
@@ -361,7 +899,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
             return
         try:
             result = subprocess.run(
-                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", "Fondo de bloqueo"],
+                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", tr("Fondo de bloqueo")],
                 capture_output=True,
                 text=True,
             )
@@ -372,7 +910,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
             appearance_set("lock_bg", value)
 
     def sddm_bg_row(self):
-        row, _label, _chevron = self.action_row("Fondo del inicio de sesión")
+        row, _label, _chevron = self.action_row(tr("Fondo del inicio de sesión"))
         return self.make_clickable_row(row, self.on_pick_sddm_bg)
 
     def on_pick_sddm_bg(self, *_args):
@@ -380,7 +918,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
             return
         try:
             result = subprocess.run(
-                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", "Fondo del login"],
+                [str(HOME / ".local/bin/wallpaper-pick"), "--desktop", "--custom", "--prompt", tr("Fondo del login")],
                 capture_output=True,
                 text=True,
             )
@@ -392,7 +930,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
             sddm_install_term()
 
     def lock_blur_row(self):
-        row, switch = self.switch_row("Desenfoque del bloqueo")
+        row, switch = self.switch_row(tr("Desenfoque del bloqueo"))
         switch.set_active(appearance_get("lock_blur", "off") == "on")
         switch.connect("notify::active", self.on_lock_blur_toggled)
         return row
@@ -403,7 +941,7 @@ class SettingsPanel(Gtk.ApplicationWindow):
         appearance_set("lock_blur", "on" if switch.get_active() else "off")
 
     def sddm_blur_row(self):
-        row, switch = self.switch_row("Desenfoque del inicio de sesión")
+        row, switch = self.switch_row(tr("Desenfoque del inicio de sesión"))
         switch.set_active(appearance_get("sddm_blur", "on") == "on")
         switch.connect("notify::active", self.on_sddm_blur_toggled)
         return row
@@ -416,26 +954,571 @@ class SettingsPanel(Gtk.ApplicationWindow):
 
     # --- INTERFAZ ---
     def waybar_row(self):
-        row, _label, _chevron = self.action_row("Barra y dock")
+        row, _label, _chevron = self.action_row(tr("Barra y dock"))
         return self.make_clickable_row(
             row, lambda: run_bg([str(HOME / ".local/bin/waybar-settings")])
         )
 
     def dock_apps_row(self):
-        row, _label, _chevron = self.action_row("Aplicaciones del dock")
+        row, _label, _chevron = self.action_row(tr("Aplicaciones del dock"))
         return self.make_clickable_row(
             row, lambda: run_bg([str(HOME / ".local/bin/dock-settings")])
         )
 
+    # --- IDIOMA Y ENTRADA ---
+    def language_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+
+        text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        text_box.set_hexpand(True)
+        title = Gtk.Label(label=tr("Idioma del sistema"), xalign=0)
+        self.language_current_label = Gtk.Label(xalign=0)
+        self.language_current_label.get_style_context().add_class("row-subtitle")
+        self.language_current_label.set_text(
+            tr("Idioma actual: {}").format(self.current_locale or "—")
+        )
+        text_box.pack_start(title, False, False, 0)
+        text_box.pack_start(self.language_current_label, False, False, 0)
+        row.pack_start(text_box, True, True, 0)
+
+        self.language_combo = Gtk.ComboBoxText()
+        self.language_combo_handler = self.language_combo.connect(
+            "changed", self.on_language_changed
+        )
+        self.refresh_language_combo()
+        row.pack_start(self.language_combo, False, False, 0)
+        return row
+
+    def refresh_language_combo(self):
+        if not hasattr(self, "language_combo"):
+            return
+        if getattr(self, "language_combo_handler", None):
+            self.language_combo.handler_block(self.language_combo_handler)
+        try:
+            self.language_combo.remove_all()
+            for locale in self.locales:
+                self.language_combo.append(locale, locale_name(locale))
+            if self.current_locale in self.locales:
+                self.language_combo.set_active_id(self.current_locale)
+            elif self.locales:
+                self.language_combo.set_active_id(self.locales[0])
+        finally:
+            if getattr(self, "language_combo_handler", None):
+                self.language_combo.handler_unblock(self.language_combo_handler)
+
+    def add_language_row(self):
+        row, _label, _chevron = self.action_row(tr("Añadir idioma…"))
+        return self.make_clickable_row(row, self.open_add_language_dialog)
+
+    def on_logout_now(self, _button=None):
+        # Misma acción que power-menu: nunca cerrar sesión automáticamente.
+        # Hyprland 0.57+ (Lua config) rechaza `hyprctl dispatch exit`, así que se
+        # prueba la forma nueva y se cae a loginctl en otros casos/versiones.
+        logout_cmd = (
+            'hyprctl dispatch exit 2>/dev/null'
+            ' || hyprctl dispatch "hl.dsp.exit()" 2>/dev/null'
+            ' || loginctl terminate-session "${XDG_SESSION_ID:-}" 2>/dev/null'
+            ' || loginctl kill-session "${XDG_SESSION_ID:-}"'
+        )
+        if DRY_RUN:
+            print(f"[dry-run] {logout_cmd}")
+            self.notify(tr("Cerrar sesión ahora"), logout_cmd)
+            return
+        run_bg(["sh", "-c", logout_cmd])
+
+    def notify(self, title, body="", urgency="normal"):
+        # Show feedback as a desktop notification instead of inline status rows.
+        if DRY_RUN:
+            print(f"[notify:{urgency}] {title}: {body}")
+            return
+        try:
+            cmd = ["notify-send", "-a", tr("Ajustes"), "-u", urgency, title]
+            if body:
+                cmd.append(body)
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            print(f"settings-menu: {title}: {body}", file=sys.stderr)
+
+    def set_language_status(self, text, spinner=False, error=False):
+        # Progress states are transient; only surface results/errors as notifications.
+        if spinner:
+            return
+        urgency = "critical" if error else "normal"
+        self.notify(tr("Idioma del sistema"), text, urgency=urgency)
+
+    def helper_error(self, rc, out, err):
+        text = (err or out or "").strip()
+        lines = [line for line in text.splitlines() if line.strip()]
+        if lines:
+            return lines[-1]
+        if rc in (126, 127):
+            return tr("Sin permiso o error del helper.")
+        return f"rc={rc}"
+
+    def open_add_language_dialog(self):
+        entries = []
+        installed = generated_locales()
+        for locale, charset in supported_locale_entries():
+            subtitle = charset
+            if normalize_locale(locale) in installed:
+                subtitle += " · " + tr("ya instalado")
+            entries.append((locale, locale, subtitle))
+        if not entries:
+            self.set_language_status(
+                tr("No se pudo leer {}.").format(SUPPORTED_LOCALES), error=True
+            )
+            return
+        self.open_search_dialog(
+            tr("Añadir idioma"),
+            tr("Buscar idioma…"),
+            entries,
+            self.add_language,
+        )
+
+    def add_language(self, locale):
+        if self.lang_applying:
+            return
+        self.lang_applying = True
+        self.set_language_status(tr("Generando {}…").format(locale), spinner=True)
+
+        def done(rc, out, err):
+            self.lang_applying = False
+            if rc == 0:
+                self.locales = sorted(set(self.locales) | {normalize_locale(locale)})
+                self.refresh_language_combo()
+                self.set_language_status(
+                    tr("Idioma {} añadido. Ya puedes seleccionarlo.").format(locale)
+                )
+                self.offer_language_packs(locale)
+            else:
+                self.set_language_status(
+                    tr("Error al añadir {}: {}").format(
+                        locale, self.helper_error(rc, out, err)
+                    ),
+                    error=True,
+                )
+
+        run_helper_async(
+            ["locale-add", locale], done, dry_run=DRY_RUN, timeout=600
+        )
+
+    def on_language_changed(self, combo):
+        if self.loading or self.lang_applying:
+            return
+        locale = combo.get_active_id()
+        if not locale or locale == self.current_locale:
+            return
+        if normalize_locale(locale) not in generated_locales():
+            self.set_language_status(
+                tr("Este locale no está generado. Añádelo con «Añadir idioma…»."),
+                error=True,
+            )
+            self.refresh_language_combo()
+            return
+
+        self.lang_applying = True
+        self.set_language_status(tr("Aplicando {}…").format(locale), spinner=True)
+
+        def done(rc, out, err):
+            self.lang_applying = False
+            if rc == 0:
+                self.current_locale = normalize_locale(locale)
+                self.language_current_label.set_text(
+                    tr("Idioma actual: {}").format(self.current_locale)
+                )
+                self.set_language_status(
+                    tr("Idioma aplicado. Cierra sesión para que las aplicaciones lo usen.")
+                )
+            else:
+                self.set_language_status(
+                    tr("Error al aplicar {}: {}").format(
+                        locale, self.helper_error(rc, out, err)
+                    ),
+                    error=True,
+                )
+                self.refresh_language_combo()
+
+        run_helper_async(["locale-set", locale], done, dry_run=DRY_RUN)
+
+    def offer_language_packs(self, locale):
+        packages = candidate_packages(locale)
+        if not packages:
+            self.set_language_status(
+                tr("No hay paquetes de idioma disponibles para {}.").format(locale)
+            )
+            return
+
+        dialog = Gtk.Dialog(
+            title=tr("Paquetes de idioma"), parent=self, modal=True
+        )
+        dialog.set_default_size(420, 320)
+        dialog.add_button(tr("Ahora no"), Gtk.ResponseType.CANCEL)
+        dialog.add_button(
+            tr("Instalar paquetes seleccionados"), Gtk.ResponseType.OK
+        )
+        content = dialog.get_content_area()
+        content.set_spacing(8)
+        content.set_border_width(14)
+        checks = {}
+        for package in packages:
+            check = Gtk.CheckButton(label=package)
+            checks[package] = check
+            content.pack_start(check, False, False, 0)
+        dialog.show_all()
+        response = dialog.run()
+        selected = [
+            package for package, check in checks.items() if check.get_active()
+        ]
+        dialog.destroy()
+        if response == Gtk.ResponseType.OK and selected:
+            self.install_language_packages(selected)
+
+    def install_language_packages(self, packages):
+        self.set_language_status(tr("Instalando paquetes…"), spinner=True)
+
+        def done(rc, out, err):
+            if rc == 0:
+                self.set_language_status(tr("Paquetes instalados."))
+            else:
+                self.set_language_status(
+                    tr("Error al instalar paquetes: {}").format(
+                        self.helper_error(rc, out, err)
+                    ),
+                    error=True,
+                )
+
+        run_helper_async(
+            ["pkg-install", *packages], done, dry_run=DRY_RUN, timeout=1800
+        )
+
+    def open_search_dialog(self, title, placeholder, entries, on_pick):
+        dialog = Gtk.Dialog(title=title, parent=self, modal=True)
+        dialog.set_default_size(460, 520)
+        dialog.add_button(tr("Cancelar"), Gtk.ResponseType.CANCEL)
+        dialog.add_button(tr("Añadir"), Gtk.ResponseType.OK)
+        content = dialog.get_content_area()
+        content.set_spacing(10)
+        content.set_border_width(14)
+
+        search = Gtk.SearchEntry()
+        search.set_placeholder_text(placeholder)
+        search.get_style_context().add_class("settings-entry")
+        content.pack_start(search, False, False, 0)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_shadow_type(Gtk.ShadowType.NONE)
+        listbox = Gtk.ListBox()
+        listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        listbox.get_style_context().add_class("lang-list")
+        scroller.add(listbox)
+        content.pack_start(scroller, True, True, 0)
+
+        row_map = {}
+        rows = []
+        for item_id, text, subtitle in entries:
+            row = Gtk.ListBoxRow()
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            box.set_border_width(8)
+            label = Gtk.Label(label=text, xalign=0)
+            box.pack_start(label, False, False, 0)
+            if subtitle:
+                sub = Gtk.Label(label=subtitle, xalign=0)
+                sub.get_style_context().add_class("row-subtitle")
+                box.pack_start(sub, False, False, 0)
+            row.add(box)
+            row_map[row] = item_id
+            row.search_text = f"{text} {subtitle or ''}".lower()
+            listbox.add(row)
+            rows.append(row)
+
+        def filter_rows(entry):
+            needle = entry.get_text().strip().lower()
+            for row in rows:
+                row.set_visible(not needle or needle in row.search_text)
+
+        def activate_row(_listbox, row):
+            dialog.response(Gtk.ResponseType.OK)
+
+        search.connect("search-changed", filter_rows)
+        listbox.connect("row-activated", activate_row)
+        dialog.show_all()
+        response = dialog.run()
+        selected = None
+        if response == Gtk.ResponseType.OK:
+            row = listbox.get_selected_row()
+            if row is not None:
+                selected = row_map.get(row)
+        dialog.destroy()
+        if selected:
+            on_pick(selected)
+
+    def keyboard_header_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label=tr("Distribuciones de teclado"), xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+        button = Gtk.Button(label=tr("Añadir distribución…"))
+        button.get_style_context().add_class("action-button")
+        button.connect("clicked", self.open_add_layout_dialog)
+        row.pack_start(button, False, False, 0)
+        return row
+
+    def layouts_box(self):
+        self.layouts_container = Gtk.Box(
+            orientation=Gtk.Orientation.VERTICAL, spacing=8
+        )
+        self.render_layouts()
+        return self.layouts_container
+
+    def render_layouts(self):
+        if not hasattr(self, "layouts_container"):
+            return
+        for child in self.layouts_container.get_children():
+            self.layouts_container.remove(child)
+        if not self.layouts:
+            label = Gtk.Label(label=tr("No hay distribuciones activas."), xalign=0)
+            label.get_style_context().add_class("error-text")
+            self.layouts_container.pack_start(label, False, False, 0)
+            self.layouts_container.show_all()
+            return
+
+        self.active_layout_index = max(
+            0, min(self.active_layout_index, len(self.layouts) - 1)
+        )
+        for index, code in enumerate(self.layouts):
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+            row.get_style_context().add_class("setting-row")
+
+            text_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            text_box.set_hexpand(True)
+            name = Gtk.Label(label=code, xalign=0)
+            name.get_style_context().add_class("layout-name")
+            description = Gtk.Label(
+                label=self.evdev_layouts.get(code, code), xalign=0
+            )
+            description.get_style_context().add_class("row-subtitle")
+            text_box.pack_start(name, False, False, 0)
+            text_box.pack_start(description, False, False, 0)
+            row.pack_start(text_box, True, True, 0)
+
+            if index == self.active_layout_index:
+                badge = Gtk.Label(label=tr("Actual"))
+                badge.get_style_context().add_class("layout-badge")
+                row.pack_start(badge, False, False, 0)
+
+            up = self.small_button(
+                "↑", tr("Subir"), lambda i=index: self.move_layout(i, -1), index > 0
+            )
+            down = self.small_button(
+                "↓",
+                tr("Bajar"),
+                lambda i=index: self.move_layout(i, 1),
+                index < len(self.layouts) - 1,
+            )
+            remove = self.small_button(
+                "−",
+                tr("Eliminar"),
+                lambda i=index: self.remove_layout(i),
+                len(self.layouts) > 1,
+            )
+            row.pack_start(up, False, False, 0)
+            row.pack_start(down, False, False, 0)
+            row.pack_start(remove, False, False, 0)
+            self.layouts_container.pack_start(row, False, False, 0)
+        self.layouts_container.show_all()
+
+    def small_button(self, label, tooltip, callback, sensitive=True):
+        button = Gtk.Button(label=label)
+        button.get_style_context().add_class("action-button")
+        button.set_tooltip_text(tooltip)
+        button.set_sensitive(sensitive)
+        button.connect("clicked", lambda _button: callback())
+        return button
+
+    def move_layout(self, index, delta):
+        target = index + delta
+        if target < 0 or target >= len(self.layouts):
+            return
+        self.layouts[index], self.layouts[target] = (
+            self.layouts[target],
+            self.layouts[index],
+        )
+        self.active_layout_index = target
+        self.apply_keyboard()
+
+    def remove_layout(self, index):
+        if len(self.layouts) <= 1:
+            self.set_keyboard_status(
+                tr("Al menos una distribución debe permanecer."), error=True
+            )
+            return
+        self.layouts.pop(index)
+        self.active_layout_index = 0
+        self.apply_keyboard()
+
+    def add_layout(self, code):
+        if code in self.layouts:
+            self.set_keyboard_status(
+                tr("La distribución {} ya está en la lista.").format(code)
+            )
+            return
+        self.layouts.append(code)
+        self.apply_keyboard()
+
+    def open_add_layout_dialog(self):
+        if not self.evdev_layouts:
+            self.set_keyboard_status(
+                tr("No se encontró {}; instala el paquete {}.").format(
+                    EVDEV_LST, "xkeyboard-config"
+                ),
+                error=True,
+            )
+            return
+        entries = [
+            (code, code, description)
+            for code, description in sorted(self.evdev_layouts.items())
+        ]
+        self.open_search_dialog(
+            tr("Añadir distribución"),
+            tr("Buscar distribución…"),
+            entries,
+            self.add_layout,
+        )
+
+    def layout_toggle_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label=tr("Atajo para cambiar"), xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+
+        self.toggle_combo = Gtk.ComboBoxText()
+        choices = [
+            ("", tr("Ninguno")),
+            ("grp:alt_shift_toggle", "Alt + Shift"),
+            ("grp:win_space_toggle", "Super + Space"),
+            ("grp:caps_toggle", "Caps Lock"),
+        ]
+        for value, text in choices:
+            self.toggle_combo.append(value, text)
+        current = self.kb_options[0] if self.kb_options else ""
+        if current and current not in {value for value, _ in choices}:
+            self.toggle_combo.append(current, current)
+        self.toggle_combo.set_active_id(current)
+        self.toggle_combo.connect("changed", self.on_toggle_changed)
+        row.pack_start(self.toggle_combo, False, False, 0)
+        return row
+
+    def on_toggle_changed(self, combo):
+        if self.loading:
+            return
+        value = combo.get_active_id() or ""
+        self.kb_options = [value] if value else []
+        self.apply_keyboard()
+
+    def keyboard_test_row(self):
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.get_style_context().add_class("setting-row")
+        label = Gtk.Label(label=tr("Probar teclado"), xalign=0)
+        label.set_hexpand(True)
+        row.pack_start(label, True, True, 0)
+        entry = Gtk.Entry()
+        entry.set_placeholder_text(tr("Escribe aquí…"))
+        entry.set_width_chars(18)
+        entry.get_style_context().add_class("settings-entry")
+        row.pack_start(entry, False, False, 0)
+        return row
+
+    def set_keyboard_status(self, text, spinner=False, error=False):
+        # Progress states are transient; only surface results/errors as notifications.
+        if spinner:
+            return
+        urgency = "critical" if error else "normal"
+        self.notify(tr("Distribuciones de teclado"), text, urgency=urgency)
+
+    def apply_keyboard(self):
+        if self.kb_applying:
+            # Queue the latest requested state so rapid edits (add/move/toggle)
+            # are not dropped while the helper is running.
+            self.kb_pending = True
+            return
+        if not self.layouts:
+            self.set_keyboard_status(tr("No hay distribuciones activas."), error=True)
+            return
+
+        self.kb_applying = True
+        self.kb_pending = False
+        self.set_keyboard_status(tr("Aplicando teclado…"), spinner=True)
+
+        # Snapshot the state being applied so async callbacks report/apply the
+        # same layouts/options even if the user changes them again.
+        layouts = list(self.layouts)
+        options = list(self.kb_options)
+
+        if DRY_RUN:
+            print(
+                "[dry-run] hyprctl eval hl.config({ input = { kb_layout = \""
+                + ",".join(layouts)
+                + "\", kb_options = \""
+                + ",".join(options)
+                + "\" } })"
+            )
+            write_language_input_block(layouts, options)
+        else:
+            ok, error = hypr_apply_keyboard(layouts, options)
+            # Persist the user's own marked block regardless of the helper
+            # result: Hyprland live state and userprefs are the user's config.
+            write_language_input_block(layouts, options)
+            if ok:
+                self.active_layout_index = hypr_active_layout_index()
+                self.render_layouts()
+                self.set_keyboard_status(
+                    tr("Distribuciones aplicadas: {}").format(",".join(layouts))
+                )
+            else:
+                self.set_keyboard_status(
+                    tr("Error al aplicar el teclado: {}").format(error), error=True
+                )
+
+        def done(rc, out, err):
+            self.kb_applying = False
+            if rc != 0:
+                self.set_keyboard_status(
+                    tr("Error al aplicar el teclado: {}").format(
+                        self.helper_error(rc, out, err)
+                    ),
+                    error=True,
+                )
+            elif not DRY_RUN:
+                self.set_keyboard_status(
+                    tr("Distribuciones aplicadas: {}").format(",".join(layouts))
+                )
+            if self.kb_pending:
+                self.apply_keyboard()
+
+        run_helper_async(
+            ["keymap-set", ",".join(layouts), ",".join(options)],
+            done,
+            dry_run=DRY_RUN,
+        )
+
     # --- SISTEMA Y PERFIL ---
     def avatar_row(self):
-        row, _label, _chevron = self.action_row("Avatar de perfil")
+        row, _label, _chevron = self.action_row(tr("Avatar de perfil"))
         return self.make_clickable_row(
             row, lambda: run_term(str(HOME / ".local/bin/avatar-select"))
         )
 
     def low_end_row(self):
-        row, switch = self.switch_row("Modo bajo consumo")
+        row, switch = self.switch_row(tr("Modo bajo consumo"))
         switch.set_active(appearance_get("low_end", "off") == "on")
         switch.connect("notify::active", self.on_low_end_toggled)
         return row

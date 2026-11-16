@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Glasshouse compatibility shim (replaces HyDE's hyde-shell).
+# Maps commonly used hyde-shell commands to Glasshouse-native tools so existing
+# keybindings/configs keep working without HyDE installed.
+set -uo pipefail
+
+cmd="${1:-}"; shift || true
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+notify() {
+  if have notify-send; then notify-send -a "Glasshouse" "$1" "${2:-}"; fi
+}
+
+# Robust logout for Hyprland 0.57+ (Lua config) with fallbacks.
+do_logout() {
+  hyprctl dispatch exit 2>/dev/null \
+    || hyprctl dispatch 'hl.dsp.exit()' 2>/dev/null \
+    || loginctl terminate-session "${XDG_SESSION_ID:-}" 2>/dev/null \
+    || loginctl kill-session "${XDG_SESSION_ID:-}" 2>/dev/null \
+    || true
+}
+
+do_lock() {
+  if have loginctl; then loginctl lock-session 2>/dev/null && return 0; fi
+  pidof hyprlock >/dev/null 2>&1 || hyprlock &
+}
+
+case "$cmd" in
+  logout)
+    do_logout
+    ;;
+  lock-session)
+    do_lock
+    ;;
+  lockscreen|lockscreen.sh)
+    # Used by hypridle: lockscreen, lockscreen.sh, lockscreen --get
+    if [ "${1:-}" = "--get" ]; then
+      pidof hyprlock 2>/dev/null || true
+    else
+      do_lock
+    fi
+    ;;
+  logoutlaunch)
+    if have power-menu; then exec power-menu; else do_logout; fi
+    ;;
+  keybinds_hint)
+    if have keybinds-viewer; then exec keybinds-viewer; else notify "Keybinds" "keybinds-viewer not found"; fi
+    ;;
+  rofilaunch)
+    mode="${1:-d}"
+    case "$mode" in
+      d) exec "${HOME}/.local/bin/rofi-drun" ;;
+      w) exec rofi -show window -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" ;;
+      f)
+        if have rofi; then notify "File finder" "No file finder configured in Glasshouse"; fi
+        exit 0
+        ;;
+      *) exec "${HOME}/.local/bin/rofi-drun" ;;
+    esac
+    ;;
+  rofiselect)
+    # HyDE launcher selector: fall back to app launcher
+    exec "${HOME}/.local/bin/rofi-drun"
+    ;;
+  volumecontrol)
+    # -o output, -i input, m mute toggle, i increase, d decrease
+    dev="output"; action=""
+    while getopts ":o:i:" opt 2>/dev/null; do
+      case "$opt" in
+        o) dev="output"; action="$OPTARG" ;;
+        i) dev="input"; action="$OPTARG" ;;
+      esac
+    done
+    if have wpctl; then
+      if [ "$dev" = "output" ]; then
+        case "$action" in
+          m) wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle ;;
+          i) wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SINK@ 5%+ ;;
+          d) wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%- ;;
+        esac
+      else
+        case "$action" in
+          m) wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle ;;
+          i) wpctl set-volume -l 1.5 @DEFAULT_AUDIO_SOURCE@ 5%+ ;;
+          d) wpctl set-volume @DEFAULT_AUDIO_SOURCE@ 5%- ;;
+        esac
+      fi
+    elif have pamixer; then
+      case "$action" in
+        m) pamixer -t ;;
+        i) pamixer -i 5 ;;
+        d) pamixer -d 5 ;;
+      esac
+    fi
+    ;;
+  brightnesscontrol)
+    action="${1:-}"
+    if have brightnessctl; then
+      case "$action" in
+        i) brightnessctl set +5% ;;
+        d) brightnessctl set 5%- ;;
+      esac
+    fi
+    ;;
+  screenshot)
+    mode="${1:-s}"
+    dir="$HOME/Pictures/Screenshots"; mkdir -p "$dir"
+    file="$dir/screenshot-$(date +%Y%m%d-%H%M%S).png"
+    case "$mode" in
+      s|sf)
+        if have grim && have slurp; then
+          geom=$(slurp 2>/dev/null) || exit 0
+          if [ "$mode" = "sf" ]; then
+            grim -g "$geom" "$file"
+          else
+            grim -g "$geom" "$file"
+          fi
+          wl-copy < "$file" 2>/dev/null || true
+          notify "Screenshot" "$file"
+        fi
+        ;;
+      m)
+        have grim && grim "$file" && wl-copy < "$file" 2>/dev/null || true
+        notify "Screenshot" "$file"
+        ;;
+      p)
+        have grim && grim "$file" && wl-copy < "$file" 2>/dev/null || true
+        notify "Screenshot" "$file"
+        ;;
+    esac
+    ;;
+  keyboardswitch)
+    hyprctl switchxkblayout all next 2>/dev/null || true
+    ;;
+  wallpaper)
+    case "${1:-}" in
+      -Gn) have wallpaper-carousel && wallpaper-carousel next || true ;;
+      -Gp) have wallpaper-carousel && wallpaper-carousel prev || true ;;
+      -SG) have wallpaper-select && wallpaper-select || true ;;
+      *) have wallpaper-select && wallpaper-select || true ;;
+    esac
+    ;;
+  waybar)
+    case "${1:-}" in
+      --hide|--toggle) pkill -SIGUSR1 waybar 2>/dev/null || (pkill waybar 2>/dev/null || true) ;;
+      *) pkill -SIGUSR1 waybar 2>/dev/null || true ;;
+    esac
+    ;;
+  system.monitor)
+    if have kitty && have btop; then exec kitty -e btop
+    elif have kitty && have htop; then exec kitty -e htop
+    else notify "System monitor" "btop/htop not found"; fi
+    ;;
+  cliphist)
+    # -c copy menu, no arg = manager; best-effort with cliphist+rofi
+    if have cliphist && have rofi; then
+      sel=$(cliphist list | rofi -dmenu -config "$HOME/dotfiles/rofi/.config/rofi/config.rasi" -i) || exit 0
+      [ -n "$sel" ] && printf '%s' "$sel" | cliphist decode | wl-copy
+    else
+      notify "Clipboard" "cliphist/rofi not available"
+    fi
+    ;;
+  emoji-picker)
+    if have rofimoji; then exec rofimoji
+    elif have rofi-emoji; then exec rofi-emoji
+    else notify "Emoji picker" "Not installed (rofimoji/rofi-emoji)"; fi
+    ;;
+  glyph-picker)
+    notify "Glyph picker" "Not configured in Glasshouse"
+    ;;
+  gamelauncher)
+    if have steam; then exec steam; else notify "Game launcher" "Not configured"; fi
+    ;;
+  gamemode)
+    if have gaming-toggle; then exec gaming-toggle; else notify "Game mode" "Not configured"; fi
+    ;;
+  hyprsunset)
+    # --toggle
+    if [ "${1:-}" = "--toggle" ]; then
+      if pgrep -x hyprsunset >/dev/null 2>&1; then pkill -x hyprsunset; else hyprsunset & fi
+    fi
+    ;;
+  window.pin)
+    hyprctl dispatch pin 2>/dev/null || true
+    ;;
+  window.mute)
+    # best-effort: no direct equivalent
+    notify "Window mute" "Not configured in Glasshouse"
+    ;;
+  pypr)
+    notify "pypr" "Not configured in Glasshouse"
+    ;;
+  wbarconfgen|wallbashtoggle|themeselect|animations|hyprlock)
+    # HyDE-specific theme/wallbash/animations selectors: not applicable in Glasshouse
+    notify "Glasshouse" "This HyDE feature is not used in Glasshouse"
+    ;;
+  -h|--help|help)
+    cat <<'EOF'
+Glasshouse hyde-shell compatibility shim.
+Supported: logout, lock-session, lockscreen, logoutlaunch, keybinds_hint,
+rofilaunch (d/w), rofiselect, volumecontrol, brightnesscontrol, screenshot,
+keyboardswitch, wallpaper, waybar, system.monitor, cliphist, emoji-picker,
+gamemode, hyprsunset --toggle, window.pin. Others are best-effort/no-op.
+EOF
+    ;;
+  *)
+    # Try to run a script in HyDE script dirs if still present (transitional)
+    for ext in "" ".sh"; do
+      for dir in "$HOME/.local/lib/hyde" "$HOME/.local/share/hyde"; do
+        if [ -x "$dir/$cmd$ext" ]; then exec "$dir/$cmd$ext" "$@"; fi
+      done
+    done
+    # Unknown command: fail quietly with notification if interactive
+    exit 0
+    ;;
+esac

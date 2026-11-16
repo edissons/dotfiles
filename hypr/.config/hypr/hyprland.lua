@@ -184,7 +184,7 @@ hl.bind(mod .. " + " .. "mouse:272", hl.dsp.window.drag(), { mouse = true })
 
 hl.bind(mod .. " + " .. "mouse:273", hl.dsp.window.resize(), { mouse = true })
 
-hl.bind(mod .. " + " .. "Space", hl.dsp.exec_cmd("rofi -show drun -config " .. os.getenv("HOME") .. "/dotfiles/rofi/.config/rofi/config.rasi"))
+hl.bind(mod .. " + " .. "Space", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/rofi-drun"))
 
 hl.bind(mod .. " + " .. "SHIFT" .. " + " .. "B", hl.dsp.exec_cmd(os.getenv("HOME") .. "/.local/bin/waybar-restart"))
 
@@ -215,7 +215,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/waybar-restart")
     hl.exec_cmd("dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/dock-restart")
-    hl.exec_cmd("swaync -c " .. os.getenv("HOME") .. "/dotfiles/swaync/.config/swaync/config.json -s " .. os.getenv("HOME") .. "/dotfiles/swaync/.config/swaync/style.css")
+    hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/swaync-run")
     hl.exec_cmd("hypridle -c " .. os.getenv("HOME") .. "/dotfiles/hypr/.config/hypr/hypridle.conf")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/low-end-toggle apply")
 end)

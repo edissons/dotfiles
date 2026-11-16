@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Start swaync with a config that matches the system language.
+set -euo pipefail
+lang="${LC_ALL:-${LC_MESSAGES:-${LANG:-}}}"
+case "${lang,,}" in en*) suffix="en" ;; *) suffix="es" ;; esac
+src="$HOME/dotfiles/swaync/.config/swaync/config.${suffix}.json"
+style="$HOME/dotfiles/swaync/.config/swaync/style.css"
+[ -f "$src" ] || src="$HOME/dotfiles/swaync/.config/swaync/config.json"
+exec swaync -c "$src" -s "$style" "$@"

@@ -14,6 +14,7 @@
     "backlight",
     "pulseaudio",
     "clock",
+    "hyprland/language",
     "custom/keybinds",
     "custom/theme",
     "custom/settings",

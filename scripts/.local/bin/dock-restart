@@ -18,5 +18,5 @@ enabled=$("$A" get dock_enabled on 2>/dev/null || echo on)
 [ "$enabled" = on ] || exit 0
 
 setsid nohup nwg-dock-hyprland "${args[@]}" \
-  -c "rofi -show drun -config $HOME/dotfiles/rofi/.config/rofi/config.rasi" \
+  -c "$HOME/.local/bin/rofi-drun" \
   >/tmp/dock.log 2>&1 9>&- &
