@@ -211,12 +211,13 @@ def load_css():
         x_bg = pill_bg
         x_bg_hover = pill_bg_hover
     else:
-        # Dark mode: match Glasshouse settings-menu glass (surface/border over blur)
-        overlay_tint = "rgba(0, 0, 0, 0.40)"
-        pill_bg = tc.get("surface", "rgba(255, 255, 255, 0.08)")
-        pill_bg_hover = "rgba(255, 255, 255, 0.12)"
+        # Dark mode: match Glasshouse settings-menu glass (rows = @surface on @bg)
+        overlay_tint = "rgba(0, 0, 0, 0.35)"
+        # Approximate @surface (rgba(255,255,255,0.08)) over @bg (rgba(30,30,34,0.60))
+        pill_bg = "rgba(50, 50, 56, 0.78)"
+        pill_bg_hover = "rgba(60, 60, 67, 0.86)"
         pill_border = tc.get("border", "rgba(255, 255, 255, 0.14)")
-        pill_highlight = "rgba(255, 255, 255, 0.06)"
+        pill_highlight = "rgba(255, 255, 255, 0.05)"
         text_primary = tc.get("text", "#f5f5f7")
         text_secondary = tc.get("subtext", "#a1a1a6")
         text_cancel = tc.get("subtext", "#a1a1a6")
