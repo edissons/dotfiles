@@ -100,6 +100,8 @@ Notas:
 | `--install-deps` | Instala con `pacman` los paquetes de Arch que falten para los **comandos requeridos**. Pide confirmación; con `--yes` añade `--noconfirm`. | `sudo` |
 | `--install-desktop-deps` | Instala con `pacman -S --needed` el **perfil de dependencias desktop** (opt-in). Respeta `--dry-run`/`--yes` y pide confirmación/sudo. No instala AUR ni usa `paru`. | `sudo` |
 | `--install-sddm-deps` | Instala con `pacman -S --needed` el **perfil de dependencias SDDM** (opt-in). Respeta `--dry-run`/`--yes` y pide confirmación/sudo. No instala AUR ni usa `paru`. | `sudo` |
+| `--with-fingerprint` | Añade la huella como alternativa a la contraseña en SDDM: `pam_fprintd` en `/etc/pam.d/sddm` (con backup) y tema `glass` con el botón de huella. Requiere `fprintd` y una huella enrolada. | `sudo` |
+| `--with-lockout` | Bloqueo progresivo por contraseñas fallidas en SDDM y hyprlock (5 s a 300 s): reescribe `/etc/pam.d/{sddm,hyprlock}` (con backups), instala `glasshouse-pam-cooldown` y una instancia propia de `faillock`. | `sudo` |
 | `--allow-nonstandard` | Permite ejecutar el instalador fuera de `~/dotfiles`. Solo para pruebas: los scripts de sesión siguen asumiendo `~/dotfiles`. | — |
 
 Opciones generales: `--dry-run` muestra las acciones sin cambiar nada, `--yes`
@@ -128,6 +130,9 @@ Respaldos de los pasos con privilegios:
 - `--with-session`: `sudo install` sobrescribe
   `/usr/local/bin/hyprland-glass` y el archivo de sesión de Wayland; no crea
   respaldo en `~/.dotfiles-backup`.
+- `--with-fingerprint` y `--with-lockout`: copian `/etc/pam.d/sddm` y
+  `/etc/pam.d/hyprlock` a `<archivo>.bak.<timestamp>` antes de reescribirlos.
+  Son los ficheros a restaurar para revertir (ver «Bloqueo progresivo»).
 
 Para deshacer los enlaces de usuario:
 
@@ -418,7 +423,7 @@ autostart por tu cuenta, revísalos por separado.
 | `nwg-dock-hyprland/` | Estilos del dock. |
 | `sddm/glass/` | Tema del greeter (QML, `theme.conf` e iconos). |
 | `scripts/` | Scripts de sesión, ajustes, Waybar, dock, fuentes, avatar, fondos y energía. |
-| `scripts/system/` | Servicios opcionales (`optional-services`). |
+| `scripts/system/` | Servicios opcionales (`optional-services`), plantillas PAM (`pam/`) y tmpfiles (`tmpfiles/`) para la huella y el bloqueo progresivo. |
 | `systemd/` | Unidades systemd de usuario (`battery-alert.service`, `wallpaper-carousel.service`). |
 | `wallpapers/` | Fondos de ejemplo. |
 | `fastfetch/` | Configuración de Fastfetch. |
@@ -486,6 +491,97 @@ journalctl -u sddm -b --no-pager | grep -Ei 'theme|qml|error|warning' | tail -50
 
 `--with-sddm` nunca reinicia SDDM; el greeter real solo se ve tras reiniciar el
 equipo o el servicio de forma manual y consciente.
+
+### Huella digital (hyprlock y SDDM)
+
+La huella es una alternativa a la contraseña; no la sustituye. Requiere
+`fprintd`/`libfprint` y al menos una huella enrolada por el usuario:
+
+```bash
+fprintd-enroll      # toca el lector varias veces cuando lo pida
+fprintd-verify      # comprueba que reconoce la huella
+```
+
+- **Pantalla de bloqueo (`hyprlock`):** soporte nativo vía fprintd. El bloque
+  `auth { fingerprint { enabled = true } }` está en
+  `hypr/.config/hypr/hyprlock.conf`; al bloquear puedes desbloquear con huella o
+  con contraseña. No necesita cambios en PAM ni `sudo`.
+- **SDDM:** usa PAM. `./install.sh --yes --with-fingerprint` (sudo) añade
+  `auth sufficient pam_fprintd.so max-tries=3 timeout=5` a `/etc/pam.d/sddm`
+  (con backup) y reinstala el tema `glass`, que incluye el botón de huella y los
+  mensajes de estado. También puedes hacerlo a mano y ejecutar `sddm-install`.
+
+El botón de huella es deliberado: SDDM no expone forma de cancelar una
+autenticación en curso, así que un intento automático al cargar el greeter
+dejaría la contraseña bloqueada durante `timeout` segundos.
+
+Limitaciones de PAM: se serializa la autenticación, así que `pam_fprintd` se
+intenta antes que la contraseña; si no tocas el lector, el login puede esperar
+hasta `timeout` segundos (5 por defecto aquí) antes de caer a `pam_unix`.
+Ajusta `timeout`/`max-tries` en `/etc/pam.d/sddm` si quieres que la contraseña
+responda antes. Un intento de huella fallido acaba en `pam_unix` con contraseña
+vacía y cuenta como fallo (ver el bloqueo progresivo más abajo). Un login
+correcto reinicia el contador. No es posible tener huella y contraseña en
+paralelo en el mismo stack PAM.
+
+### Bloqueo progresivo por contraseñas fallidas (SDDM y hyprlock)
+
+`./install.sh --yes --with-lockout` (sudo) instala un bloqueo progresivo real en
+ambas pantallas: tras cada contraseña errónea la siguiente espera 5 s, 10 s,
+20 s, 40 s, 80 s, 160 s y como tope 300 s. Un login correcto vuelve a cero.
+
+Cómo funciona:
+
+- `scripts/system/pam/pam-cooldown` se instala como
+  `/usr/local/bin/glasshouse-pam-cooldown` y se ejecuta desde PAM con
+  `pam_exec` antes de la pila de autenticación. Lee el tally de fallos y
+  duerme el retardo que toque.
+- `scripts/system/pam/faillock-lockscreen.conf` define una instancia propia de
+  `faillock` (`deny = 15`, `fail_interval = 900`, `unlock_time = 600`) con su
+  propio directorio, `/run/faillock-lockscreen`. Así el bloqueo de estas dos
+  pantallas no afecta al resto del sistema (consola, `sudo`, SSH), que siguen
+  con la política normal de `/etc/security/faillock.conf`. `deny = 15` es solo
+  una red de seguridad: con los retardos es difícil llegar.
+- `/etc/tmpfiles.d/glasshouse-lockout.conf` crea ese directorio en modo `1777`,
+  porque `hyprlock` corre sin privilegios y debe poder registrar sus fallos.
+- Las pilas `/etc/pam.d/sddm` y `/etc/pam.d/hyprlock` se reescriben con
+  `scripts/system/pam/sddm.pam` y `scripts/system/pam/hyprlock.pam`. El
+  instalador guarda `sddm.bak.<fecha>` y `hyprlock.bak.<fecha>` antes de
+  tocarlas. Si ya existía `--with-fingerprint`, la pila de SDDM conserva
+  `pam_fprintd`; ejecutar `--with-lockout` y luego `--with-fingerprint` (o
+  ambos flags a la vez) mantiene la huella en la pila gestionada.
+
+Qué se ve en pantalla:
+
+- **SDDM:** tras un fallo, el mensaje rojo indica la espera del siguiente
+  intento («Contraseña incorrecta. Espera 10 s antes de reintentar.») y, al
+  enviar, una cuenta atrás («Esperando 9 s…») mientras PAM duerme.
+- **hyprlock:** una label roja bajo el campo ejecuta
+  `glasshouse-pam-cooldown --hint` cada 2 s y muestra «Espera 10 s antes de
+  reintentar» mientras el tally tenga fallos recientes. hyprlock no permite más
+  dinamismo en su configuración, por eso el aviso se calcula desde el tally y no
+  desde el propio diálogo PAM.
+
+Rollback: desde una TTY (`Ctrl+Alt+F3`)
+
+```bash
+sudo cp /etc/pam.d/sddm.bak.<fecha> /etc/pam.d/sddm
+sudo cp /etc/pam.d/hyprlock.bak.<fecha> /etc/pam.d/hyprlock
+```
+
+Para consultar o borrar los fallos de estas pantallas:
+
+```bash
+faillock --conf /etc/security/faillock-lockscreen.conf \
+         --dir /run/faillock-lockscreen --user "$USER"
+faillock --conf /etc/security/faillock-lockscreen.conf \
+         --dir /run/faillock-lockscreen --user "$USER" --reset
+```
+
+Notas: el retardo también se aplica al intento de huella (es el mismo stack
+PAM), y como PAM es secuencial la espera ocurre antes de mostrar ningún
+resultado. El `timeout=5` de `pam_fprintd` limita cuánto puede bloquearse la
+contraseña por un intento de huella.
 
 ## Ajustes de apariencia
 

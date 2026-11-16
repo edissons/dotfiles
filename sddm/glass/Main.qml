@@ -20,9 +20,69 @@ Rectangle {
     readonly property string suffix: dark ? "dark" : "light"
     readonly property bool hasAvatar: config.avatarMode === "image" && config.avatar
 
+    property bool fingerprintAttempt: false
+
+    // Bloqueo progresivo: espeja los retardos de PAM (5, 10, 20, ... 300 s)
+    // para mostrarlos en rojo mientras la autenticación espera.
+    readonly property color cFail: "#ff453a"
+    property int failCount: 0
+    property int waitLeft: 0
+
+    function delayFor(n) {
+        if (n <= 0)
+            return 0
+        var d = 5
+        for (var i = 1; i < n; ++i)
+            d *= 2
+        return Math.min(d, 300)
+    }
+
+    function startWait(n) {
+        var d = delayFor(n)
+        if (d <= 0)
+            return
+        waitLeft = d
+        waitTimer.restart()
+        err.text = "Esperando " + waitLeft + " s…"
+        err.color = root.cFail
+    }
+
     function doLogin() {
-        if (userList.currentItem && password.text.length > 0)
-            sddm.login(userList.currentItem.uname, password.text, sessionList.currentIndex)
+        if (!userList.currentItem || password.text.length === 0)
+            return
+        fingerprintAttempt = false
+        startWait(failCount)
+        sddm.login(userList.currentItem.uname, password.text, sessionList.currentIndex)
+    }
+
+    function doFingerprintLogin() {
+        if (!userList.currentItem)
+            return
+        fingerprintAttempt = true
+        if (failCount > 0) {
+            startWait(failCount)
+        } else {
+            err.text = "Coloca el dedo en el lector…"
+            err.color = root.cSub
+        }
+        sddm.login(userList.currentItem.uname, "", sessionList.currentIndex)
+    }
+
+    Timer {
+        id: waitTimer
+        interval: 1000
+        repeat: true
+        onTriggered: {
+            root.waitLeft -= 1
+            if (root.waitLeft > 0) {
+                err.text = "Esperando " + root.waitLeft + " s…"
+                err.color = root.cFail
+            } else {
+                waitTimer.stop()
+                err.text = "Verificando…"
+                err.color = root.cSub
+            }
+        }
     }
 
     Component.onCompleted: password.forceActiveFocus()
@@ -30,9 +90,30 @@ Rectangle {
     Connections {
         target: sddm
         function onLoginFailed() {
+            waitTimer.stop()
+            root.waitLeft = 0
+            root.failCount += 1
+            var wait = root.delayFor(root.failCount)
             password.text = ""
-            err.text = "Contraseña incorrecta"
+            if (root.fingerprintAttempt) {
+                err.text = "Huella no reconocida. Espera " + wait + " s o usa la contraseña."
+                root.fingerprintAttempt = false
+            } else {
+                err.text = "Contraseña incorrecta. Espera " + wait + " s antes de reintentar."
+            }
+            err.color = root.cFail
             password.forceActiveFocus()
+        }
+        function onLoginSucceeded() {
+            waitTimer.stop()
+            root.waitLeft = 0
+            root.failCount = 0
+        }
+        function onInformationMessage(message) {
+            waitTimer.stop()
+            root.waitLeft = 0
+            err.text = message
+            err.color = root.cSub
         }
     }
 
@@ -216,6 +297,32 @@ Rectangle {
                 Keys.onReturnPressed: root.doLogin()
                 Keys.onEnterPressed: root.doLogin()
                 Keys.onEscapePressed: root.menuOpen = false
+            }
+
+            // Botón de huella (fprintd/PAM)
+            Rectangle {
+                id: fpBtn
+                anchors.right: parent.left
+                anchors.rightMargin: 10
+                anchors.verticalCenter: parent.verticalCenter
+                width: 36; height: 36; radius: 18
+                color: fpArea.containsMouse ? root.cBorder : root.cGlass
+                border.width: 1
+                border.color: root.cBorder
+                Text {
+                    anchors.centerIn: parent
+                    text: "󰈷"
+                    color: root.cText
+                    font.family: "JetBrainsMono Nerd Font"
+                    font.pixelSize: 20
+                }
+                MouseArea {
+                    id: fpArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: root.doFingerprintLogin()
+                }
             }
 
             // Botón "?"

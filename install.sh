@@ -43,6 +43,8 @@ WITH_SESSION=0
 WITH_FONTS=0
 WITH_SDDM=0
 WITH_BOOT_SOUND=0
+WITH_FINGERPRINT=0
+WITH_LOCKOUT=0
 INSTALL_DEPS=0
 INSTALL_DESKTOP_DEPS=0
 INSTALL_SDDM_DEPS=0
@@ -144,6 +146,15 @@ Flags:
                          copies reactos-boot.wav to /usr/local/share/sounds/,
                          installs /etc/systemd/system/boot-sound.service and
                          enables it. Requires alsa-utils (aplay).
+  --with-fingerprint     Configure fingerprint login for SDDM (sudo): adds
+                         pam_fprintd.so to /etc/pam.d/sddm (backup included) and
+                         reinstalls the Glass theme with the fingerprint button.
+                         Requires fprintd and an enrolled fingerprint.
+  --with-lockout         Install the progressive password lockout for SDDM and
+                         hyprlock (sudo): rewrites /etc/pam.d/sddm and
+                         /etc/pam.d/hyprlock (backups included), installs a
+                         pam_exec cooldown helper and a dedicated faillock tally.
+                         Delays: 5s, 10s, 20s, 40s, 80s, 160s, 300s.
   --install-deps         Install missing required Arch packages with pacman.
   --install-desktop-deps Install the optional Arch desktop dependency profile
                          with pacman (opt-in; no AUR/paru, no pacman -Sy).
@@ -188,7 +199,11 @@ Privileged steps and risks:
   greeter packaging can be ambiguous across setups, so use --install-sddm-deps
   only when it matches your SDDM/greeter stack. --with-boot-sound copies the
   sound to /usr/local/share/sounds/ and installs/enables a systemd system
-  service in /etc/systemd/system (sudo).
+  service in /etc/systemd/system (sudo). --with-fingerprint edits
+  /etc/pam.d/sddm (backup included) and reinstalls the Glass theme;
+  --with-lockout rewrites /etc/pam.d/sddm and /etc/pam.d/hyprlock (backups
+  included) and installs a pam_exec helper. Keep a TTY available in case the
+  greeter or the lockscreen needs a fix; restore the .bak files to revert.
 
 Package installation:
   --install-deps installs missing required Arch packages. --install-desktop-deps
@@ -207,6 +222,9 @@ Examples:
   ./install.sh --yes --install-sddm-deps --with-sddm
   ./install.sh --yes --with-fonts --with-sddm
   ./install.sh --yes --with-boot-sound
+  ./install.sh --yes --with-fingerprint
+  ./install.sh --yes --with-lockout
+  ./install.sh --yes --with-fingerprint --with-lockout
 EOF
 }
 
@@ -221,6 +239,8 @@ parse_args() {
       --with-fonts) WITH_FONTS=1 ;;
       --with-sddm) WITH_SDDM=1 ;;
       --with-boot-sound) WITH_BOOT_SOUND=1 ;;
+      --with-fingerprint) WITH_FINGERPRINT=1 ;;
+      --with-lockout) WITH_LOCKOUT=1 ;;
       --install-deps) INSTALL_DEPS=1 ;;
       --install-desktop-deps) INSTALL_DESKTOP_DEPS=1 ;;
       --install-sddm-deps) INSTALL_SDDM_DEPS=1 ;;
@@ -1109,6 +1129,177 @@ install_boot_sound() {
   ok "Boot sound installed and enabled (boot-sound.service). Reboot to hear it."
 }
 
+pam_install_helpers() {
+  local src="$REPO/scripts/system/pam"
+  local tmpfiles="$REPO/scripts/system/tmpfiles/glasshouse-lockout.conf"
+
+  sudo install -d -m 755 /usr/local/bin || return 1
+  sudo install -m 755 "$src/pam-cooldown" /usr/local/bin/glasshouse-pam-cooldown || return 1
+  sudo install -m 644 "$src/faillock-lockscreen.conf" /etc/security/faillock-lockscreen.conf || return 1
+  sudo install -d -m 755 /etc/tmpfiles.d || return 1
+  sudo install -m 644 "$tmpfiles" /etc/tmpfiles.d/glasshouse-lockout.conf || return 1
+  sudo systemd-tmpfiles --create /etc/tmpfiles.d/glasshouse-lockout.conf || return 1
+  return 0
+}
+
+pam_write_sddm() {
+  local with_fp="$1"
+  local template="$REPO/scripts/system/pam/sddm.pam"
+  local fp_line="" tmp
+
+  if (( with_fp )); then
+    fp_line="auth        [success=5 default=ignore] pam_fprintd.so max-tries=3 timeout=5"
+  fi
+
+  tmp="$(mktemp)" || return 1
+  if ! sed "s|@FINGERPRINT@|$fp_line|" "$template" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! sudo install -m 644 "$tmp" /etc/pam.d/sddm; then
+    rm -f "$tmp"
+    return 1
+  fi
+  rm -f "$tmp"
+  return 0
+}
+
+install_lockout() {
+  log "Installing progressive password lockout (PAM: SDDM + hyprlock, sudo)"
+
+  local src="$REPO/scripts/system/pam"
+  local pam_sddm="/etc/pam.d/sddm"
+  local pam_hyprlock="/etc/pam.d/hyprlock"
+
+  if [[ ! -f "$src/sddm.pam" || ! -f "$src/hyprlock.pam" || ! -f "$src/pam-cooldown" ]]; then
+    error "PAM templates not found in $src"
+    return 0
+  fi
+
+  local with_fp=0
+  (( WITH_FINGERPRINT )) && with_fp=1
+  if grep -q 'pam_fprintd' "$pam_sddm" 2>/dev/null; then
+    with_fp=1
+  fi
+
+  if (( DRY_RUN )); then
+    log "[dry-run] install $src/pam-cooldown -> /usr/local/bin/glasshouse-pam-cooldown"
+    log "[dry-run] install $src/faillock-lockscreen.conf -> /etc/security/faillock-lockscreen.conf"
+    log "[dry-run] install glasshouse-lockout.conf -> /etc/tmpfiles.d/ and create /run/faillock-lockscreen"
+    log "[dry-run] rewrite $pam_sddm (fingerprint=$with_fp) and $pam_hyprlock (backups included)"
+    return 0
+  fi
+
+  warn "This rewrites $pam_sddm and $pam_hyprlock (backups included) and installs PAM helpers (sudo)."
+  if ! confirm "Continue with the progressive lockout configuration?"; then
+    warn "Skipped lockout configuration"
+    return 0
+  fi
+
+  local ts f
+  ts="$(date +%Y%m%d-%H%M%S)"
+  for f in "$pam_sddm" "$pam_hyprlock"; do
+    [[ -f "$f" ]] || continue
+    if ! sudo cp -a "$f" "${f}.bak.${ts}"; then
+      error "Could not back up $f"
+      return 0
+    fi
+  done
+
+  if ! pam_install_helpers; then
+    error "Could not install PAM helpers"
+    return 0
+  fi
+  if ! pam_write_sddm "$with_fp"; then
+    error "Could not write $pam_sddm"
+    return 0
+  fi
+  if ! sudo install -m 644 "$src/hyprlock.pam" "$pam_hyprlock"; then
+    error "Could not write $pam_hyprlock"
+    return 0
+  fi
+
+  ok "Progressive lockout installed for SDDM and hyprlock (5s..300s)."
+  warn "Keep a TTY (Ctrl+Alt+F3) for rollback: sudo cp ${pam_sddm}.bak.${ts} $pam_sddm"
+}
+
+install_fingerprint() {
+  log "Configuring fingerprint login for SDDM (sudo): PAM + Glass theme"
+
+  if ! command -v fprintd-list >/dev/null 2>&1; then
+    warn "fprintd is not installed. Install fprintd/libfprint first."
+    return 0
+  fi
+  if ! fprintd-list "$USER" 2>/dev/null | grep -qE '^[[:space:]]*-[[:space:]]*#'; then
+    warn "No enrolled fingerprints for $USER. Run: fprintd-enroll"
+    return 0
+  fi
+  if [[ ! -f /usr/lib/security/pam_fprintd.so && ! -f /usr/lib64/security/pam_fprintd.so ]]; then
+    warn "pam_fprintd.so not found. Install fprintd first."
+    return 0
+  fi
+
+  local pam_file="/etc/pam.d/sddm"
+  if [[ ! -f "$pam_file" ]]; then
+    warn "$pam_file not found; is SDDM installed?"
+    return 0
+  fi
+
+  if (( DRY_RUN )); then
+    log "[dry-run] sudo cp -a $pam_file ${pam_file}.bak.<timestamp>"
+    if grep -q "Managed by Glasshouse" "$pam_file" 2>/dev/null; then
+      log "[dry-run] rewrite managed PAM stack with pam_fprintd"
+    else
+      log "[dry-run] insert 'auth sufficient pam_fprintd.so max-tries=3 timeout=5' before 'auth include system-login'"
+    fi
+    log "[dry-run] $HOME/.local/bin/sddm-install <theme-mode>"
+    return 0
+  fi
+
+  warn "This edits $pam_file (backup included) and reinstalls the Glass theme (sudo)."
+  if ! confirm "Continue with fingerprint login configuration?"; then
+    warn "Skipped fingerprint configuration"
+    return 0
+  fi
+
+  local backup="${pam_file}.bak.$(date +%Y%m%d-%H%M%S)"
+  if ! sudo cp -a "$pam_file" "$backup"; then
+    error "Could not back up $pam_file"
+    return 0
+  fi
+
+  if grep -q "Managed by Glasshouse" "$pam_file"; then
+    if ! pam_write_sddm 1; then
+      error "Could not write $pam_file"
+      return 0
+    fi
+  elif grep -q "pam_fprintd.so" "$pam_file"; then
+    vlog "pam_fprintd already present in $pam_file"
+  else
+    if ! sudo sed -i '/^auth[[:space:]]\+include[[:space:]]\+system-login/i auth        sufficient  pam_fprintd.so max-tries=3 timeout=5' "$pam_file"; then
+      error "Could not modify $pam_file"
+      return 0
+    fi
+  fi
+
+  local mode="dark"
+  local mode_file="$HOME/.config/theme/mode"
+  if [[ -r "$mode_file" ]]; then
+    mode="$(<"$mode_file")"
+    mode="${mode//[[:space:]]/}"
+  fi
+  case "$mode" in
+    dark|light) ;;
+    *) mode="dark" ;;
+  esac
+
+  if "$HOME/.local/bin/sddm-install" "$mode"; then
+    ok "Fingerprint login configured for SDDM and Glass theme updated. Reboot to test."
+  else
+    error "sddm-install failed after configuring PAM"
+  fi
+}
+
 validate_bash_scripts() {
   log "Validating bash scripts"
   local files=("$REPO/install.sh")
@@ -1390,6 +1581,12 @@ main() {
   fi
   if (( WITH_BOOT_SOUND )); then
     install_boot_sound
+  fi
+  if (( WITH_LOCKOUT )); then
+    install_lockout
+  fi
+  if (( WITH_FINGERPRINT )); then
+    install_fingerprint
   fi
 
   validate_all

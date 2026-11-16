@@ -1,0 +1,77 @@
+#!/bin/sh
+# Glasshouse: retardo progresivo tras contraseñas fallidas (SDDM e hyprlock).
+#
+# El contador lo mantiene pam_faillock en su tally propio: se incrementa en
+# authfail y se reinicia en authsucc, así que un login correcto vuelve a dejar
+# el retardo a cero.
+#
+# Modos:
+#   --sleep  (por defecto) espera 5s, 10s, 20s, 40s, 80s, 160s o 300s (tope)
+#            según los fallos recientes. Lo llaman las pilas de SDDM e hyprlock.
+#   --hint   imprime el aviso para el siguiente intento. Lo usa una label de
+#            hyprlock (`cmd[update:...]`), que es la única forma de mostrar
+#            texto dinámico en la pantalla de bloqueo.
+
+set -u
+
+mode="${1:---sleep}"
+case "$mode" in
+    --hint|--sleep) ;;
+    *) exit 0 ;;
+esac
+
+user="${PAM_USER:-${USER:-}}"
+[ -n "$user" ] || exit 0
+
+TALLY_DIR="/run/faillock-lockscreen"
+CONF="/etc/security/faillock-lockscreen.conf"
+FAILLOCK="/usr/bin/faillock"
+GREP="/usr/bin/grep"
+SLEEP="/usr/bin/sleep"
+STAT="/usr/bin/stat"
+DATE="/usr/bin/date"
+
+# Debe coincidir con /etc/security/faillock-lockscreen.conf.
+FAIL_INTERVAL=900
+MAX_DELAY=300
+DENY=15
+
+delay_for() {
+    # $1 = número de fallos -> retardo en segundos (5, 10, 20, ..., 300)
+    d=5
+    n=1
+    while [ "$n" -lt "$1" ] && [ "$d" -lt "$MAX_DELAY" ]; do
+        d=$((d * 2))
+        n=$((n + 1))
+    done
+    if [ "$d" -gt "$MAX_DELAY" ]; then
+        d=$MAX_DELAY
+    fi
+    printf '%s' "$d"
+}
+
+count=0
+tally="$TALLY_DIR/$user"
+if [ -d "$TALLY_DIR" ] && [ -x "$FAILLOCK" ] && [ -f "$tally" ]; then
+    now=$("$DATE" +%s 2>/dev/null) || now=0
+    mtime=$("$STAT" -c %Y "$tally" 2>/dev/null) || mtime=0
+    if [ "$now" -gt 0 ] && [ $((now - mtime)) -le "$FAIL_INTERVAL" ]; then
+        c=$("$FAILLOCK" --conf "$CONF" --dir "$TALLY_DIR" --user "$user" 2>/dev/null | "$GREP" -c ' V$')
+        case "$c" in
+            ''|*[!0-9]*) count=0 ;;
+            *) count="$c" ;;
+        esac
+    fi
+fi
+
+if [ "$mode" = "--hint" ]; then
+    [ "$count" -gt 0 ] || exit 0
+    # Con la cuenta bloqueada manda el mensaje de pam_faillock.
+    [ "$count" -lt "$DENY" ] || exit 0
+    printf 'Espera %s s antes de reintentar\n' "$(delay_for "$count")"
+    exit 0
+fi
+
+[ "$count" -gt 0 ] || exit 0
+"$SLEEP" "$(delay_for "$count")"
+exit 0
