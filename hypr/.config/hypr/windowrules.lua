@@ -705,4 +705,18 @@ hl.layer_rule({
     blur = true,
 })
 
+hl.layer_rule({
+    match = {
+        namespace = "match:namespace powermenu",
+    },
+    blur = true,
+})
+
+hl.layer_rule({
+    match = {
+        namespace = "match:namespace powermenu",
+    },
+    ignore_alpha = 0,
+})
+
 -- hyprlang endif

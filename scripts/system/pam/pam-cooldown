@@ -11,12 +11,14 @@
 #   --hint   imprime el aviso para el siguiente intento. Lo usa una label de
 #            hyprlock (`cmd[update:...]`), que es la única forma de mostrar
 #            texto dinámico en la pantalla de bloqueo.
+#   --reset  limpia el tally de fallos del usuario (p.ej. tras un desbloqueo
+#            exitoso por huella en hyprlock, que no pasa por la pila PAM).
 
 set -u
 
 mode="${1:---sleep}"
 case "$mode" in
-    --hint|--sleep) ;;
+    --hint|--sleep|--reset) ;;
     *) exit 0 ;;
 esac
 
@@ -30,6 +32,17 @@ GREP="/usr/bin/grep"
 SLEEP="/usr/bin/sleep"
 STAT="/usr/bin/stat"
 DATE="/usr/bin/date"
+RM="/usr/bin/rm"
+
+# --reset: limpiar tally tras autenticación exitosa fuera de PAM (huella en hyprlock).
+if [ "$mode" = "--reset" ]; then
+    if [ -x "$FAILLOCK" ]; then
+        "$FAILLOCK" --conf "$CONF" --dir "$TALLY_DIR" --user "$user" --reset >/dev/null 2>&1 || true
+    fi
+    # Fallback: eliminar el archivo de tally propio del usuario.
+    "$RM" -f "$TALLY_DIR/$user" 2>/dev/null || true
+    exit 0
+fi
 
 # Debe coincidir con /etc/security/faillock-lockscreen.conf.
 FAIL_INTERVAL=900

@@ -41,6 +41,7 @@ LAYER_NAMESPACE = "powermenu"  # used by Hyprland layerrules
 
 import locale
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -172,6 +173,18 @@ def run_action(argv):
 # CSS: "liquid glass" styling. Hyprland provides the blur via layerrule;
 # this stylesheet provides tint, translucency, borders, highlights and motion.
 # -----------------------------------------------------------------------------
+def _theme_colors():
+    """Read Glasshouse theme tokens from current.css for consistent glass tones."""
+    css = HOME / ".config/theme/current.css"
+    colors = {}
+    try:
+        for m in re.finditer(r"@define-color\s+(\S+)\s+([^;]+);", css.read_text(encoding="utf-8")):
+            colors[m.group(1)] = m.group(2).strip()
+    except Exception:
+        pass
+    return colors
+
+
 def load_css():
     light = is_light_mode()
     try:
@@ -180,30 +193,36 @@ def load_css():
             settings.set_property("gtk-application-prefer-dark-theme", not light)
     except Exception:
         pass
+    tc = _theme_colors()
 
     if light:
-        # Light mode: keep dim overlay for focus, but use light glass pills/text
-        overlay_tint = "rgba(255, 255, 255, 0.28)"
-        pill_bg = "rgba(255, 255, 255, 0.72)"
-        pill_bg_hover = "rgba(255, 255, 255, 0.86)"
-        pill_border = "rgba(0, 0, 0, 0.10)"
+        # Light mode: align with Glasshouse glass tokens (strong contrast)
+        overlay_tint = "rgba(255, 255, 255, 0.22)"
+        pill_bg = "rgba(255, 255, 255, 0.78)"
+        pill_bg_hover = "rgba(255, 255, 255, 0.92)"
+        pill_border = tc.get("border", "rgba(0, 0, 0, 0.10)")
         pill_highlight = "rgba(255, 255, 255, 0.55)"
-        text_primary = "rgba(0,0,0,0.85)"
-        text_secondary = "rgba(0,0,0,0.55)"
-        text_cancel = "rgba(0,0,0,0.55)"
-        hover_border = "rgba(0,0,0,0.18)"
+        text_primary = tc.get("text", "#1d1d1f")
+        text_secondary = tc.get("text", "#1d1d1f")  # strong contrast on overlay
+        text_cancel = text_primary
+        hover_border = "rgba(0, 0, 0, 0.18)"
+        title_shadow = "0 1px 3px rgba(255,255,255,0.55), 0 0 8px rgba(255,255,255,0.35)"
+        badge_icon = "#1d1d1f"
         x_bg = pill_bg
         x_bg_hover = pill_bg_hover
     else:
-        overlay_tint = "rgba(0, 0, 0, 0.45)"
-        pill_bg = "rgba(255, 255, 255, 0.13)"
-        pill_bg_hover = "rgba(255, 255, 255, 0.22)"
-        pill_border = "rgba(255, 255, 255, 0.15)"
-        pill_highlight = "rgba(255, 255, 255, 0.10)"
-        text_primary = "#ffffff"
-        text_secondary = "rgba(255,255,255,0.55)"
-        text_cancel = "rgba(255,255,255,0.65)"
-        hover_border = "rgba(255,255,255,0.28)"
+        # Dark mode: match Glasshouse settings-menu glass (surface/border over blur)
+        overlay_tint = "rgba(0, 0, 0, 0.40)"
+        pill_bg = tc.get("surface", "rgba(255, 255, 255, 0.08)")
+        pill_bg_hover = "rgba(255, 255, 255, 0.12)"
+        pill_border = tc.get("border", "rgba(255, 255, 255, 0.14)")
+        pill_highlight = "rgba(255, 255, 255, 0.06)"
+        text_primary = tc.get("text", "#f5f5f7")
+        text_secondary = tc.get("subtext", "#a1a1a6")
+        text_cancel = tc.get("subtext", "#a1a1a6")
+        hover_border = "rgba(255, 255, 255, 0.22)"
+        title_shadow = "0 1px 3px rgba(0,0,0,0.70), 0 0 10px rgba(0,0,0,0.45)"
+        badge_icon = tc.get("text", "#f5f5f7")
         x_bg = pill_bg
         x_bg_hover = pill_bg_hover
 
@@ -218,11 +237,13 @@ def load_css():
         color: {text_primary};
         font-size: {TITLE_SIZE_PX}px;
         font-weight: 600;
+        text-shadow: {title_shadow};
     }}
     .pm-subtitle {{
         color: {text_secondary};
         font-size: {SUBTITLE_SIZE_PX}px;
-        font-weight: 400;
+        font-weight: 500;
+        text-shadow: {title_shadow};
     }}
     .pm-pill {{
         background-color: {pill_bg};
@@ -243,7 +264,7 @@ def load_css():
         min-width: {BADGE_SIZE}px;
         min-height: {BADGE_SIZE}px;
         border-radius: {BADGE_SIZE // 2}px;
-        color: #ffffff;
+        color: {badge_icon};
         font-size: 18px;
     }}
     .pm-label {{
@@ -388,7 +409,8 @@ class PowerMenuWindow(Gtk.Window):
         badge.set_valign(Gtk.Align.CENTER)
         # Per-badge accent color via inline CSS provider
         bprov = Gtk.CssProvider()
-        bprov.load_from_data(f"* {{ background-color: {accent}; }}".encode("utf-8"))
+        _bcolor = "#ffffff" if accent in (ACCENT_SHUTDOWN, ACCENT_REBOOT) else ("#1d1d1f" if is_light_mode() else "#f5f5f7")
+        bprov.load_from_data(f"* {{ background-color: {accent}; color: {_bcolor}; }}".encode("utf-8"))
         badge.get_style_context().add_provider(bprov, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
         lbl = Gtk.Label(label=text)

@@ -73,4 +73,11 @@ sed -i -E \
   -e '/^background \{/,/^\}/{/^ *blur_(passes|size) *=/d}' \
   -e '/^background \{/a\    blur_size = 7' \
   -e "/^background \\{/a\\    blur_passes = $PASSES" "$RUN"
-exec hyprlock -c "$RUN"
+# Al desbloquear (contraseña o huella) limpiar el tally de fallos: la huella
+# en hyprlock no pasa por PAM, así que authsucc de pam_faillock no se ejecuta.
+hyprlock -c "$RUN"
+rc=$?
+if [ "$rc" -eq 0 ] && [ -x /usr/local/bin/glasshouse-pam-cooldown ]; then
+    /usr/local/bin/glasshouse-pam-cooldown --reset 2>/dev/null || true
+fi
+exit "$rc"
