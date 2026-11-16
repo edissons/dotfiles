@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guía Glasshouse — Instalación, solución de problemas y personalización</title>
+<style>
+:root {
+  --bg: #1e1e22; --bg2: #25252b; --surface: rgba(255,255,255,0.08);
+  --border: rgba(255,255,255,0.14); --text: #f5f5f7; --sub: #a1a1a6;
+  --accent: #0a84ff; --green: #32d74b; --yellow: #ffd60a; --red: #ff453a;
+  --code: #16161a;
+}
+:root.light {
+  --bg: #f6f6f8; --bg2: #ffffff; --surface: rgba(0,0,0,0.05);
+  --border: rgba(0,0,0,0.10); --text: #1d1d1f; --sub: #636366;
+  --code: #eef0f3;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: "SF Pro Text", "Segoe UI", Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
+header { position: sticky; top: 0; z-index: 10; backdrop-filter: blur(12px); background: color-mix(in srgb, var(--bg) 85%, transparent); border-bottom: 1px solid var(--border); }
+.wrap { max-width: 1100px; margin: 0 auto; padding: 0 20px; }
+.head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; flex-wrap: wrap; }
+h1 { font-size: 20px; margin: 0; font-weight: 600; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+input[type="search"] { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; min-width: 240px; }
+button, .chip { background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; cursor: pointer; font: inherit; }
+button:hover, .chip:hover { border-color: var(--accent); }
+nav.tabs { display: flex; gap: 8px; padding: 0 0 12px; flex-wrap: wrap; }
+nav.tabs button { border-radius: 999px; padding: 6px 14px; }
+nav.tabs button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+main { padding: 22px 0 40px; }
+section.panel { display: none; }
+section.panel.active { display: block; }
+h2 { font-size: 22px; margin: 8px 0 12px; }
+h3 { font-size: 17px; margin: 22px 0 8px; }
+p, li { color: var(--text); }
+.muted { color: var(--sub); }
+.card { background: var(--bg2); border: 1px solid var(--border); border-radius: 14px; padding: 14px 16px; margin: 12px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+pre { background: var(--code); border: 1px solid var(--border); border-radius: 12px; padding: 12px; overflow: auto; }
+code { font-family: "JetBrains Mono", "SF Mono", ui-monospace, monospace; font-size: 0.92em; }
+:not(pre)>code { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 14px; }
+th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+th { background: var(--surface); }
+details { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; margin: 10px 0; }
+summary { cursor: pointer; font-weight: 600; }
+details[open] summary { margin-bottom: 8px; }
+.badge { display: inline-block; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--sub); }
+.ok { color: var(--green); } .warn { color: var(--yellow); } .err { color: var(--red); }
+a { color: var(--accent); }
+.hidden { display: none !important; }
+.small { font-size: 13px; color: var(--sub); }
+@media (max-width: 700px) { input[type="search"]{min-width: 100%;} .head{align-items: stretch;} }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="head">
+      <h1>Glasshouse — Guía interactiva</h1>
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Buscar (ej. power menu, idioma, hypr, fastfetch)…" aria-label="Buscar">
+        <button id="themeBtn" type="button" title="Cambiar tema de la guía">Claro/Oscuro</button>
+      </div>
+    </div>
+    <nav class="tabs" aria-label="Secciones">
+      <button class="active" data-tab="instalacion">Instalación</button>
+      <button data-tab="uso">Uso rápido</button>
+      <button data-tab="problemas">Solución de problemas</button>
+      <button data-tab="personalizacion">Personalización (rutas y archivos)</button>
+      <button data-tab="referencia">Referencia</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="instalacion" class="panel active searchable">
+    <h2>Instalación</h2>
+    <p class="muted">Glasshouse está pensado para vivir en <code>~/dotfiles</code>. La sesión y muchos scripts asumen esa ruta.</p>
+
+    <div class="card">
+      <h3>Requisitos</h3>
+      <ul>
+        <li>Arch Linux + Hyprland (Wayland). Sesión basada en Lua (<code>hypr/.config/hypr/session.lua</code>).</li>
+        <li>Componentes: Waybar, SwayNC, Rofi, Kitty, nwg-dock-hyprland, Hyprlock/Hypridle, grim/slurp/wl-clipboard, wpctl (PipeWire), brightnessctl, etc.</li>
+        <li>Fuentes SF Pro / SF Mono no se redistribuyen; <code>--with-fonts</code> usa una copia local si existe.</li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <h3>Instalación rápida (usuario)</h3>
+<pre><code>git clone &lt;URL-DEL-REPOSITORIO&gt; ~/dotfiles
+cd ~/dotfiles
+./install.sh --dry-run --verbose   # revisar plan
+./install.sh --yes                 # aplicar (solo nivel de usuario, sin sudo)</code></pre>
+      <p>El modo por defecto crea enlaces simbólicos, genera valores de ejecución (tema, <code>appearance.conf</code>, avatar, apps del dock) y construye Waybar. <strong>No</strong> usa <code>sudo</code>.</p>
+      <p class="small">Si el repo no está en <code>$HOME/dotfiles</code>, falla salvo con <code>--allow-nonstandard</code> (los scripts de sesión siguen asumiendo <code>~/dotfiles</code>).</p>
+    </div>
+
+    <div class="card">
+      <h3>Flags opcionales</h3>
+      <table>
+        <tr><th>Flag</th><th>Qué hace</th><th>Privilegios</th></tr>
+        <tr><td><code>--install-deps</code></td><td>Instala con <code>pacman</code> los paquetes faltantes de comandos requeridos.</td><td>sudo</td></tr>
+        <tr><td><code>--install-desktop-deps</code></td><td>Perfil desktop (pacman, sin AUR/paru).</td><td>sudo</td></tr>
+        <tr><td><code>--install-sddm-deps</code></td><td>Perfil SDDM.</td><td>sudo</td></tr>
+        <tr><td><code>--with-session</code></td><td>Instala <code>/usr/local/bin/hyprland-glass</code> y la sesión Wayland.</td><td>sudo</td></tr>
+        <tr><td><code>--with-sddm</code></td><td>Tema SDDM <code>glass</code> (modifica <code>/etc/sddm.conf</code>). Ten una TTY (<code>Ctrl+Alt+F3</code>) antes de reiniciar.</td><td>sudo</td></tr>
+        <tr><td><code>--with-fonts</code></td><td>Instala SF Pro a nivel de sistema y aplica (<code>fonts-install</code>/<code>fonts-apply</code>).</td><td>sudo</td></tr>
+        <tr><td><code>--with-fingerprint</code></td><td>Huella en SDDM (<code>pam_fprintd</code>) y botón en tema glass. Requiere <code>fprintd</code> y huella enrolada.</td><td>sudo</td></tr>
+        <tr><td><code>--with-lockout</code></td><td>Bloqueo progresivo por contraseñas fallidas (5s→300s) en SDDM e hyprlock: reescribe PAM (con backups), instala <code>glasshouse-pam-cooldown</code> y faillock dedicado.</td><td>sudo</td></tr>
+        <tr><td><code>--with-localeinput</code></td><td>Helper de Idioma y entrada + regla polkit (<code>/usr/local/lib/localeinput/...</code>, <code>/etc/polkit-1/rules.d/90-localeinput.rules</code>).</td><td>sudo</td></tr>
+      </table>
+      <p>Opciones generales: <code>--dry-run</code>, <code>--yes</code>, <code>--verbose</code>.</p>
+    </div>
+
+    <div class="card">
+      <h3>Post-instalación</h3>
+      <ul>
+        <li>Si instalaste la sesión: elige <strong>Hyprland Glass</strong> en el greeter (SDDM) o ejecuta <code>hyprland-glass</code>.</li>
+        <li>Idioma y teclado: abre el menú de ajustes → “Idioma y entrada” (requiere <code>--with-localeinput</code> para aplicar cambios de sistema). Tras cambiar locale, <strong>cierra sesión</strong> para que las apps hereden <code>LANG/LC_*</code>.</li>
+        <li>Recarga componentes si hace falta: <code>pkill -SIGUSR2 waybar</code>, <code>~/.local/bin/swaync-apply-locale</code>, <code>hyprctl reload</code>.</li>
+      </ul>
+    </div>
+
+    <details>
+      <summary>Backups y desinstalación</summary>
+      <ul>
+        <li>Backups de usuario: <code>~/.dotfiles-backup/install-&lt;timestamp&gt;/</code> (con <code>manifest.txt</code>) cuando hay algo que respaldar.</li>
+        <li>SDDM: <code>/var/backups/sddm-themes/glass.&lt;ts&gt;</code> y <code>/etc/sddm.conf.bak.&lt;ts&gt;</code>.</li>
+        <li>PAM (<code>--with-fingerprint</code>/<code>--with-lockout</code>): <code>/etc/pam.d/sddm.bak.&lt;ts&gt;</code>, <code>/etc/pam.d/hyprlock.bak.&lt;ts&gt;</code>.</li>
+        <li>Desinstalar enlaces de usuario: <code>./uninstall.sh --dry-run</code> / <code>--yes</code> (solo symlinks al repo bajo <code>$HOME</code>; no revierte cambios de sistema).</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="uso" class="panel searchable">
+    <h2>Uso rápido</h2>
+    <div class="grid">
+      <div class="card"><h3>Atajos útiles</h3><ul>
+        <li><strong>Super + Espacio</strong>: lanzador de apps (<code>rofi-drun</code>).</li>
+        <li><strong>Super + ,</strong>: panel de ajustes.</li>
+        <li><strong>Super + /</strong>: visor de atajos (<code>keybinds-viewer</code>).</li>
+        <li><strong>Super + L</strong>: bloquear pantalla.</li>
+        <li><strong>Ctrl + Alt + Supr</strong>: menú de energía.</li>
+        <li><strong>Super + K</strong>: cambiar layout de teclado.</li>
+      </ul><p class="small">Los atajos exactos dependen de <code>keybindings.conf|.lua</code> y <code>userprefs</code>.</p></div>
+      <div class="card"><h3>Tema claro/oscuro</h3>
+        <p><code>~/.local/bin/theme-toggle</code> alterna <code>~/.config/theme/mode</code> y propaga <code>current.*</code> a GTK, iconos, Kvantum, Waybar, SwayNC, Kitty y dock.</p>
+      </div>
+      <div class="card"><h3>Waybar / SwayNC</h3>
+        <p>Reconstruir/reiniciar Waybar: <code>~/.local/bin/waybar-build</code> / <code>~/.local/bin/waybar-restart</code>.</p>
+        <p>Aplicar idioma de SwayNC: <code>~/.local/bin/swaync-apply-locale</code> (usa <code>LC_MESSAGES/LANG</code>).</p>
+      </div>
+      <div class="card"><h3>Idioma y entrada</h3>
+        <p>Desde Ajustes → “Idioma y entrada” (helper con polkit). Aplica locale (<code>localectl set-locale</code>, <code>LC_*</code> consistentes) y layouts/atajo de cambio en Hyprland + persistencia.</p>
+        <p><span class="badge">Importante</span> Cierra sesión para que toda la sesión herede el nuevo idioma.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="problemas" class="panel searchable">
+    <h2>Solución de problemas</h2>
+    <p class="muted">Casos reales vistos en esta configuración y cómo resolverlos.</p>
+
+    <details open data-tags="hyde desinstalar hypr config reinicio roto">
+      <summary>Desinstalar HyDE rompió la sesión (faltan configs de Hyprland) <span class="badge err">crítico</span></summary>
+      <p><strong>Síntoma:</strong> tras ejecutar el desinstalador de HyDE desaparecen <code>~/.config/hypr/hyprland.conf</code>, <code>keybindings.conf</code>, <code>userprefs.conf</code>, etc., o <code>$HYPRLAND_CONFIG</code> apunta a un archivo antiguo de HyDE. La sesión puede fallar al reiniciar.</p>
+      <p><strong>Causa:</strong> el script de desinstalación de HyDE elimina configs vivas.</p>
+      <p><strong>Solución:</strong> Glasshouse usa la config del repo; restaura desde el repo y corrige <code>$HYPRLAND_CONFIG</code>:</p>
+<pre><code>REPO=~/dotfiles/hypr/.config/hypr
+cp -a "$REPO"/{hyprland.conf,hyprland.lua,keybindings.conf,keybindings.lua,userprefs.conf,userprefs.lua,monitors.conf,monitors.lua,windowrules.conf,windowrules.lua,hypridle.conf,hypridle.lua,hyprlock.conf} ~/.config/hypr/
+# si HYPRLAND_CONFIG apunta a ~/.local/share/hypr/hyprland.conf:
+mkdir -p ~/.local/share/hypr && cp -a "$REPO/hyprland.conf" ~/.local/share/hypr/hyprland.conf
+hyprctl configerrors</code></pre>
+      <p class="small">La sesión <code>hyprland-glass</code> carga <code>~/dotfiles/hypr/.config/hypr/session.lua</code>; evita depender de <code>~/.local/share/hyde</code>.</p>
+    </details>
+
+    <details data-tags="power menu waybar no abre crash titleshadow">
+      <summary>El menú de energía no abre desde Waybar <span class="badge warn">común</span></summary>
+      <p><strong>Diagnóstico:</strong> ejecútalo en terminal para ver el error:</p>
+<pre><code>~/.local/bin/power-menu</code></pre>
+      <p><strong>Causa vista:</strong> <code>UnboundLocalError</code> por variable no definida (p. ej. <code>title_shadow</code>) en una rama de <code>load_css()</code>.</p>
+      <p><strong>Solución:</strong> corrige el script en <code>scripts/.local/bin/power-menu</code> (symlink en <code>~/.local/bin/power-menu</code>), valida con <code>python3 -m py_compile ...</code> y vuelve a abrir. Revisa también que existan <code>~/.config/theme/current.css</code> y <code>mode</code>.</p>
+    </details>
+
+    <details data-tags="huella fingerprint bloqueo cooldown faillock contador acumula">
+      <summary>El contador de bloqueo por contraseña se acumula al desbloquear con huella <span class="badge warn">común</span></summary>
+      <p><strong>Síntoma:</strong> fallas la contraseña, desbloqueas con huella y al volver a bloquear el retardo/contador es mayor.</p>
+      <p><strong>Causa:</strong> en Hyprlock la huella es nativa (fprintd) y no pasa por PAM, así que <code>pam_faillock</code> <code>authsucc</code> no limpia el tally.</p>
+      <p><strong>Solución:</strong> limpiar el tally tras un desbloqueo exitoso: <code>glasshouse-pam-cooldown --reset</code> (modo <code>--reset</code> en <code>scripts/system/pam/pam-cooldown</code>, instalado en <code>/usr/local/bin/glasshouse-pam-cooldown</code>) llamado desde <code>scripts/.local/bin/lock-screen</code> al salir <code>hyprlock</code> con éxito.</p>
+<pre><code>sudo install -m 755 ~/dotfiles/scripts/system/pam/pam-cooldown /usr/local/bin/glasshouse-pam-cooldown
+# verificar:
+faillock --conf /etc/security/faillock-lockscreen.conf --dir /run/faillock-lockscreen --user "$USER"</code></pre>
+      <p class="small">En SDDM, si <code>pam_fprintd</code> salta a <code>authsucc</code> en la pila, el reseteo ocurre por PAM.</p>
+    </details>
+
+    <details data-tags="idioma blueman ingles español sesion relogin locale">
+      <summary>Blueman u otras apps no cambian de idioma sin cerrar sesión</summary>
+      <p><strong>Causa:</strong> las apps GTK/Qt heredan el entorno (<code>LANG/LC_MESSAGES</code>) al iniciarse y usan sus catálogos de traducción instalados.</p>
+      <p><strong>Solución:</strong> configura el locale del sistema (Ajustes → Idioma y entrada o <code>localectl</code>) y <strong>cierra sesión e inicia de nuevo</strong>. Prueba puntual: <code>LC_MESSAGES=en_US.UTF-8 blueman-manager</code>. Algunas apps dependen de tener el paquete de idioma instalado.</p>
+    </details>
+
+    <details data-tags="swaync notificaciones estilo glass idioma">
+      <summary>SwayNC no tiene estilo glass o idioma esperado</summary>
+      <ul>
+        <li>Config/estilo en vivo: <code>~/.config/swaync/</code> (puede diferir del repo). Respalda antes de cambiar.</li>
+        <li>Aplicar idioma según sesión: <code>~/.local/bin/swaync-apply-locale</code> (genera <code>~/.config/swaync/config.json</code> y recarga).</li>
+        <li>Assets del repo: <code>swaync/.config/swaync/style.css</code>, <code>config.{en,es}.json</code>, lanzador <code>swaync-run</code>.</li>
+        <li>El estilo glass usa tokens de <code>~/.config/theme/current.css</code> (evita dependencias wallbash/HyDE).</li>
+      </ul>
+    </details>
+
+    <details data-tags="lanzador rofi logo super espacio no abre">
+      <summary>El logo o Super+Espacio no abre el lanzador</summary>
+      <ul>
+        <li>Wrapper: <code>~/.local/bin/rofi-drun</code> (symlink al repo). Verifica: <code>command -v rofi-drun</code>, <code>~/.local/bin/rofi-drun</code>.</li>
+        <li>Waybar: <code>definitions.json</code>/<code>~/.cache/waybar/config.json</code> deben llamar a <code>~/.local/bin/rofi-drun</code>. Recarga Waybar: <code>pkill -SIGUSR2 waybar</code> o <code>~/.local/bin/waybar-restart</code>.</li>
+        <li>Atajo: revisa <code>hypr/.config/hypr/keybindings.conf|.lua</code> o <code>userprefs.conf|.lua</code> (p. ej. <code>Super+Space</code>).</li>
+      </ul>
+    </details>
+
+    <details data-tags="fastfetch terminal kitty zsh random-fetch">
+      <summary>Terminal sin apariencia / error de fastfetch tras cambios o desinstalar HyDE</summary>
+      <ul>
+        <li><strong>Kitty:</strong> config en repo <code>kitty/.config/kitty/kitty.conf</code> (incluye <code>~/.config/theme/current.kitty</code>). Enlaza: <code>ln -sfn ~/dotfiles/kitty/.config/kitty ~/.config/kitty</code> o vía <code>install.sh</code>.</li>
+        <li><strong>Fastfetch:</strong> si <code>~/.config/zsh/user.zsh</code> llama a <code>~/.config/fastfetch/random-fetch.sh</code> y falta, restaura <code>~/.config/fastfetch/</code> (respaldo o config propia) o ajusta el script de inicio.</li>
+        <li><strong>Prompt (Starship):</strong> si <code>STARSHIP_CONFIG</code> apunta a un archivo inexistente, se usa la config por defecto. Restaura <code>~/.config/starship/starship.toml</code> si aplica.</li>
+        <li>Abre una nueva terminal para aplicar cambios.</li>
+      </ul>
+    </details>
+
+    <details data-tags="dolphin qt kvantum apariencia">
+      <summary>Dolphin/Qt perdió apariencia</summary>
+      <p>Revisa/restaura: <code>~/.config/dolphinrc</code>, <code>~/.config/kdeglobals</code>, <code>~/.config/qt5ct</code>, <code>~/.config/qt6ct</code>, <code>~/.config/Kvantum</code>, <code>~/.config/gtk-3.0</code>. El tema se propaga con <code>theme-toggle</code>/scripts de tema; reinicia Dolphin/apps Qt tras cambios.</p>
+    </details>
+
+    <details data-tags="blur powermenu layerrule">
+      <summary>El menú de energía no tiene blur/glass como otros paneles</summary>
+      <p>Añade reglas de capa para el namespace <code>powermenu</code> en <code>hypr/.config/hypr/windowrules.conf</code> y <code>windowrules.lua</code>:</p>
+<pre><code>layerrule = blur true,match:namespace powermenu
+layerrule = ignore_alpha 0,match:namespace powermenu</code></pre>
+      <p>Recarga Hyprland (<code>hyprctl reload</code>) y vuelve a abrir el menú.</p>
+    </details>
+
+    <details data-tags="session hyprland-glass config ruta">
+      <summary>¿Qué config carga la sesión?</summary>
+      <p>La sesión Glasshouse usa el repo, no <code>~/.config/hypr</code> como fuente principal:</p>
+<pre><code>/usr/local/bin/hyprland-glass
+  -> start-hyprland -- -c ~/dotfiles/hypr/.config/hypr/session.lua</code></pre>
+      <p><code>session.lua</code> carga <code>hyprland.lua</code> y <code>daily.lua</code>. Edita en <code>~/dotfiles/hypr/.config/hypr/</code> para cambios persistentes en el dotfile. Nota: <code>$HYPRLAND_CONFIG</code> puede apuntar a <code>~/.local/share/hypr/hyprland.conf</code> en tu instalación; mantenlo coherente.</p>
+    </details>
+  </section>
+
+  <section id="personalizacion" class="panel searchable">
+    <h2>Personalización: rutas y archivos</h2>
+    <p class="muted">Dónde tocar para adaptar Glasshouse a tu gusto. Prefiere editar en el <strong>repo</strong> (<code>~/dotfiles</code>) y, si aplica, recargar o re-symlink con <code>./install.sh --yes</code>.</p>
+
+    <div class="card">
+      <h3>Mapa rápido</h3>
+      <table>
+        <tr><th>Qué</th><th>Ruta principal</th><th>Notas</th></tr>
+        <tr><td>Sesión Hyprland (base)</td><td><code>hypr/.config/hypr/session.lua</code>, <code>hyprland.lua</code>, <code>daily.lua</code></td><td>Fuente de la sesión <code>hyprland-glass</code>.</td></tr>
+        <tr><td>Atajos</td><td><code>hypr/.config/hypr/keybindings.conf</code>, <code>keybindings.lua</code></td><td>Ambos formatos; mantén coherencia si usas ambos.</td></tr>
+        <tr><td>Preferencias personales</td><td><code>hypr/.config/hypr/userprefs.conf</code>, <code>userprefs.lua</code></td><td>Incluye bloques marcados (p. ej. Idioma y entrada); no dupliques bloques.</td></tr>
+        <tr><td>Monitores / reglas de ventana</td><td><code>monitors.conf|.lua</code>, <code>windowrules.conf|.lua</code></td><td>Resolución, escala, <code>layerrule</code>/blur.</td></tr>
+        <tr><td>Idle / bloqueo</td><td><code>hypridle.conf|.lua</code>, <code>hyprlock.conf</code></td><td><code>lock-screen</code> genera config desde el template del repo.</td></tr>
+        <tr><td>Tema y colores</td><td><code>~/.config/theme/</code> (<code>mode</code>, <code>current.*</code>, <code>appearance.conf</code>, <code>avatar*</code>)</td><td><code>appearance.conf</code> ignorado por git; cambia con <code>theme-toggle</code>/scripts.</td></tr>
+        <tr><td>Waybar</td><td><code>waybar/.config/waybar/</code> (<code>definitions.json</code>, <code>modules.json</code>, <code>style.css</code>, <code>settings.css</code>)</td><td><code>waybar-build</code> → <code>~/.cache/waybar/config.json</code>.</td></tr>
+        <tr><td>Notificaciones</td><td><code>swaync/.config/swaync/</code></td><td><code>config.{en,es}.json</code>, <code>style.css</code>, <code>swaync-run</code>/<code>swaync-apply-locale</code>.</td></tr>
+        <tr><td>Lanzador</td><td><code>rofi/.config/rofi/</code>, <code>scripts/.local/bin/rofi-drun</code></td><td>Wrapper con placeholder según locale.</td></tr>
+        <tr><td>Terminal</td><td><code>kitty/.config/kitty/kitty.conf</code>, <code>~/.config/theme/current.kitty</code></td><td>Paleta la controla el tema.</td></tr>
+        <tr><td>Dock</td><td><code>nwg-dock-hyprland/.config/nwg-dock-hyprland/</code></td><td>Apps fijadas y estilo; control desde ajustes/scripts.</td></tr>
+        <tr><td>Scripts de usuario</td><td><code>scripts/.local/bin/</code> (symlink a <code>~/.local/bin</code>)</td><td>Menús, wallpaper, avatar, lock, locale, etc.</td></tr>
+        <tr><td>SDDM</td><td><code>sddm/glass/</code>, <code>scripts/.local/bin/sddm-install</code></td><td>Requiere sudo para instalar tema en sistema.</td></tr>
+        <tr><td>Locale/teclado (sistema)</td><td>Helper <code>scripts/.local/lib/localeinput/locale-input-helper</code> + polkit <code>scripts/system/polkit/90-localeinput.rules</code></td><td>Instalar con <code>--with-localeinput</code>.</td></tr>
+        <tr><td>Autenticación/PAM</td><td><code>scripts/system/pam/</code></td><td><code>pam-cooldown</code>, configs faillock/PAM (<code>--with-lockout</code>/<code>--with-fingerprint</code>).</td></tr>
+      </table>
+    </div>
+
+    <details>
+      <summary>Fondos y pantalla de bloqueo/login</summary>
+      <ul>
+        <li>Directorio de fondos y selección: <code>~/.config/theme/appearance.conf</code> (p. ej. <code>wallpaper_dir</code>, carrusel, fondos de lock/SDDM). Ajustable desde el menú de ajustes.</li>
+        <li>Resolución de fondo: <code>~/.local/bin/appearance-wall</code> / scripts de wallpaper. Formatos comunes: jpg/jpeg/png/webp.</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Avatar</summary>
+      <ul>
+        <li>Config: <code>~/.config/theme/avatar.conf</code>, imagen procesada <code>~/.config/theme/avatar.png</code> (runtime, ignorada por git).</li>
+        <li>Selector: <code>~/.local/bin/avatar-select</code>. SDDM puede sincronizar avatar con <code>sddm-install</code>.</li>
+      </ul>
+    </details>
+
+    <details>
+      <summary>Idioma de componentes propios</summary>
+      <p>Lanzador, SwayNC, visor de atajos y selectores siguen <code>LC_MESSAGES/LANG</code> (ES/EN). El menú de ajustes usa un diccionario interno. El locale del sistema se persiste con <code>localectl</code> (vía helper) y requiere re-login para propagarse a la sesión.</p>
+    </details>
+
+    <details>
+      <summary>Recargar tras cambios</summary>
+      <ul>
+        <li>Hyprland: <code>hyprctl reload</code> (algunos cambios en modo Lua o binds pueden requerir reiniciar sesión).</li>
+        <li>Waybar: <code>~/.local/bin/waybar-restart</code> o <code>pkill -SIGUSR2 waybar</code>.</li>
+        <li>SwayNC: <code>~/.local/bin/swaync-apply-locale</code> o <code>swaync-client --reload-config --reload-css</code>.</li>
+        <li>Symlinks/configs de usuario: <code>./install.sh --yes</code>.</li>
+      </ul>
+    </details>
+  </section>
+
+  <section id="referencia" class="panel searchable">
+    <h2>Referencia</h2>
+    <div class="card">
+      <h3>Comandos útiles</h3>
+<pre><code>./install.sh --dry-run --verbose   # plan
+./install.sh --yes                 # aplicar (usuario)
+./install.sh --yes --with-localeinput --with-lockout
+hyprctl configerrors               # validar config
+~/.local/bin/waybar-restart        # reconstruir/reiniciar Waybar
+~/.local/bin/swaync-apply-locale   # config SwayNC según locale
+localectl status                   # locale/teclado del sistema
+faillock --conf /etc/security/faillock-lockscreen.conf --dir /run/faillock-lockscreen --user "$USER"</code></pre>
+    </div>
+    <div class="card">
+      <h3>Enlaces</h3>
+      <ul>
+        <li><a href="../README.md">README del repositorio</a></li>
+        <li>Capturas: <code>docs/screenshots/</code></li>
+        <li>Sesión: <code>hypr/.config/hypr/session.lua</code> → <code>hyprland.lua</code> → <code>daily.lua</code></li>
+      </ul>
+    </div>
+    <div class="card small">
+      <p>Guía generada para el dotfile Glasshouse. Ajusta rutas si tu instalación difiere (p. ej. si no usas <code>~/dotfiles</code>).</p>
+    </div>
+  </section>
+</main>
+
+<script>
+(function(){
+  const tabs = document.querySelectorAll('nav.tabs button');
+  const panels = document.querySelectorAll('section.panel');
+  const q = document.getElementById('q');
+  const themeBtn = document.getElementById('themeBtn');
+
+  function show(id){
+    tabs.forEach(b=>b.classList.toggle('active', b.dataset.tab===id));
+    panels.forEach(p=>p.classList.toggle('active', p.id===id));
+    location.hash = id;
+    q.dispatchEvent(new Event('input'));
+  }
+  tabs.forEach(b=>b.addEventListener('click', ()=>show(b.dataset.tab)));
+  const initial = (location.hash||'').replace('#','');
+  if(initial && document.getElementById(initial)) show(initial);
+
+  themeBtn.addEventListener('click', ()=>document.documentElement.classList.toggle('light'));
+
+  function norm(s){ return (s||'').toLowerCase(); }
+  q.addEventListener('input', ()=>{
+    const term = norm(q.value.trim());
+    const active = document.querySelector('section.panel.active');
+    if(!active) return;
+    const items = active.querySelectorAll('.card, details, tr, li, .grid > div');
+    if(!term){ items.forEach(el=>el.classList.remove('hidden')); return; }
+    items.forEach(el=>{
+      const text = norm(el.innerText || el.textContent) + ' ' + norm(el.getAttribute('data-tags'));
+      // keep structural containers visible if any child matches by showing self when match
+      el.classList.toggle('hidden', text.indexOf(term) === -1);
+    });
+    // always show headings
+    active.querySelectorAll('h2,h3').forEach(h=>h.classList.remove('hidden'));
+  });
+})();
+</script>
+</body>
+</html>

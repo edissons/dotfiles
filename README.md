@@ -10,17 +10,31 @@ el instalador asumen esa ruta.
 
 ## Vista previa
 
-**Escritorio** — Hyprland, Waybar superior, dock inferior y paleta oscura.
+**Escritorio (oscuro / claro)** — Hyprland, Waybar superior y paleta Glasshouse.
 
-<img src="docs/screenshots/desktop.png" alt="Escritorio de Glasshouse con Hyprland, Waybar superior, dock inferior y fondo oscuro" width="900">
+| Oscuro | Claro |
+| --- | --- |
+| <img src="docs/screenshots/desktop-dark.png" alt="Escritorio Glasshouse en modo oscuro" width="430"> | <img src="docs/screenshots/desktop-light.png" alt="Escritorio Glasshouse en modo claro" width="430"> |
+
+**Menús y paneles** — ajustes, energía, notificaciones y lanzador.
+
+| Ajustes (oscuro) | Ajustes (claro) |
+| --- | --- |
+| <img src="docs/screenshots/settings-dark.png" alt="Panel de ajustes en modo oscuro" width="430"> | <img src="docs/screenshots/settings-light.png" alt="Panel de ajustes en modo claro" width="430"> |
+
+| Menú de energía (oscuro) | Menú de energía (claro) |
+| --- | --- |
+| <img src="docs/screenshots/power-menu-dark.png" alt="Menú de energía en modo oscuro" width="430"> | <img src="docs/screenshots/power-menu-light.png" alt="Menú de energía en modo claro" width="430"> |
+
+| Centro de notificaciones | Lanzador de apps |
+| --- | --- |
+| <img src="docs/screenshots/swaync-dark.png" alt="Centro de notificaciones (SwayNC)" width="430"> | <img src="docs/screenshots/launcher-dark.png" alt="Lanzador de aplicaciones (Rofi)" width="430"> |
 
 **Barra** — píldora de workspaces, reloj y módulos de estado.
 
 <img src="docs/screenshots/waybar.png" alt="Barra de Waybar de Glasshouse con píldora de workspaces, reloj y módulos de sistema" width="900">
 
-**Panel de ajustes** — panel GTK3 «Barra y dock».
-
-<img src="docs/screenshots/settings-panel.png" alt="Panel GTK3 de ajustes de Glasshouse para módulos de Waybar y dock" width="340">
+> Guía interactiva (instalación, solución de problemas y personalización): [`docs/guia.html`](docs/guia.html) — ábrela en tu navegador.
 
 ## Qué incluye
 
