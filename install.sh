@@ -507,6 +507,7 @@ link_configs() {
   safe_link "$REPO/systemd/.config/systemd/user/powermodemenu-apply.service" "$HOME/.config/systemd/user/powermodemenu-apply.service"
 
   mkdir -p -- "$HOME/.config/powermodemenu"
+  mkdir -p -- "$HOME/.cache/powermodemenu"
   safe_link "$REPO/scripts/.config/powermodemenu/powermodemenu.py" "$HOME/.config/powermodemenu/powermodemenu.py"
   safe_link "$REPO/scripts/.config/powermodemenu/apply-idle-profile" "$HOME/.config/powermodemenu/apply-idle-profile"
   safe_link "$REPO/scripts/.config/powermodemenu/apply-saved-mode.sh" "$HOME/.config/powermodemenu/apply-saved-mode.sh"

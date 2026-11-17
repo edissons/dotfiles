@@ -91,6 +91,13 @@ STRINGS = {
         "apps_using": "Apps Using Significant Energy",
         "battery_settings": "Battery Settings",
         "charge_limit": "Charge limit",
+        "idle_timing": "Screen & sleep timing",
+        "idle_earlier": "Earlier",
+        "idle_later": "Later",
+        "idle_normal": "Normal",
+        "idle_effect": "Locks in {lock}, screen off in {dpms}, sleep in {suspend}",
+        "idle_effect_hib": "Locks in {lock}, screen off in {dpms}, sleep in {suspend}, hibernate in {hib}",
+        "idle_gaming": "Disabled while Gaming mode is on",
         "applied": "Applied",
         "error": "Error",
         "dry_run": "dry-run",
@@ -114,6 +121,13 @@ STRINGS = {
         "apps_using": "Apps con alto consumo de energía",
         "battery_settings": "Ajustes de batería",
         "charge_limit": "Límite de carga",
+        "idle_timing": "Tiempos de bloqueo y apagado",
+        "idle_earlier": "Antes",
+        "idle_later": "Después",
+        "idle_normal": "Normal",
+        "idle_effect": "Bloquea en {lock}, apaga pantalla en {dpms}, suspende en {suspend}",
+        "idle_effect_hib": "Bloquea en {lock}, apaga pantalla en {dpms}, suspende en {suspend}, hiberna en {hib}",
+        "idle_gaming": "Desactivado con el modo Juego activo",
         "applied": "Aplicado",
         "error": "Error",
         "dry_run": "prueba",
@@ -137,6 +151,13 @@ STRINGS = {
         "apps_using": "Apps usando energia significativa",
         "battery_settings": "Ajustes de bateria",
         "charge_limit": "Limite de carga",
+        "idle_timing": "Tempos de bloqueio e tela",
+        "idle_earlier": "Antes",
+        "idle_later": "Depois",
+        "idle_normal": "Normal",
+        "idle_effect": "Bloqueia em {lock}, tela desliga em {dpms}, suspende em {suspend}",
+        "idle_effect_hib": "Bloqueia em {lock}, tela desliga em {dpms}, suspende em {suspend}, hiberna em {hib}",
+        "idle_gaming": "Desativado no modo Jogo",
         "applied": "Aplicado",
         "error": "Erro",
         "dry_run": "teste",
@@ -281,6 +302,72 @@ def top_energy_process():
         if cpu >= SIGNIFICANT_CPU_PERCENT and name not in ("ps", "powermodemenu", "python3", "python"):
             return name
     return None
+
+
+IDLE_PRESETS = [
+    ("idle_earlier", 0.5),
+    ("idle_earlier", 0.75),
+    ("idle_normal", 1.0),
+    ("idle_later", 1.25),
+    ("idle_later", 1.5),
+]
+IDLE_PRESET_LABELS = {
+    0.5: "Muy pronto",
+    0.75: "Pronto",
+    1.0: "Normal",
+    1.25: "Tarde",
+    1.5: "Muy tarde",
+}
+
+
+def fmt_idle_seconds(seconds):
+    try:
+        seconds = int(seconds)
+    except Exception:
+        return "--"
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds % 60 == 0:
+        return f"{seconds // 60} min"
+    m, s = divmod(seconds, 60)
+    return f"{m} min {s} s"
+
+
+def idle_script_path():
+    script = Path.home() / ".config/powermodemenu/apply-idle-profile"
+    if script.is_file():
+        return str(script)
+    script = Path(__file__).resolve().parent / "apply-idle-profile"
+    if script.is_file():
+        return str(script)
+    return None
+
+
+def read_idle_info():
+    script = idle_script_path()
+    if not script:
+        return None
+    try:
+        r = subprocess.run([script, "--print"], capture_output=True, text=True, timeout=8)
+        if r.returncode != 0:
+            return None
+        return json.loads(r.stdout.strip() or "{}")
+    except Exception:
+        return None
+
+
+def set_idle_scale(scale):
+    script = idle_script_path()
+    if not script:
+        return False, "idle helper not found"
+    try:
+        r = subprocess.run([script, "--set-scale", str(scale)], capture_output=True, text=True, timeout=20)
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout or "error").strip().splitlines()[0]
+            return False, detail
+        return True, ""
+    except Exception as e:
+        return False, str(e)
 
 
 def notify(summary, body=""):
@@ -667,6 +754,9 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.charge_revealer.set_child(self.charge_panel)
         self.card.append(self.charge_revealer)
 
+        # Idle timing controls live inside "Battery Settings" panel (appended below)
+        self.build_idle_panel()
+
     def build_charge_panel(self):
         top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
         self.charge_title = Gtk.Label(label=L["charge_limit"], xalign=0)
@@ -699,6 +789,42 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.charge_panel.append(self.charge_msg)
         self._charge_apply_source = None
 
+    def build_idle_panel(self):
+        sep = Gtk.Box()
+        sep.add_css_class("pm-sep")
+        sep.set_size_request(-1, 1)
+        self.charge_panel.append(sep)
+
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        title = Gtk.Label(label=L["idle_timing"], xalign=0)
+        title.add_css_class("pm-sub")
+        title.set_hexpand(True)
+        top.append(title)
+        self.idle_value = Gtk.Label(label="--", xalign=1)
+        self.idle_value.add_css_class("pm-sub")
+        top.append(self.idle_value)
+        self.charge_panel.append(top)
+
+        presets = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        presets.set_halign(Gtk.Align.CENTER)
+        self.idle_preset_buttons = {}
+        for val, label in ((0.5, "Muy pronto"), (0.75, "Pronto"), (1.0, "Normal"), (1.25, "Tarde"), (1.5, "Muy tarde")):
+            b = Gtk.Button(label=label)
+            b.add_css_class("pm-preset")
+            b.connect("clicked", lambda _b, v=val: self.on_idle_preset(v))
+            presets.append(b)
+            self.idle_preset_buttons[val] = b
+        self.charge_panel.append(presets)
+
+        self.idle_effect = Gtk.Label(label="", xalign=0)
+        self.idle_effect.add_css_class("pm-hint")
+        self.idle_effect.set_wrap(True)
+        self.charge_panel.append(self.idle_effect)
+
+        self.idle_msg = Gtk.Label(label="", xalign=0)
+        self.idle_msg.add_css_class("pm-hint")
+        self.charge_panel.append(self.idle_msg)
+
     def on_toggle_charge(self, *_args):
         revealed = not self.charge_revealer.get_reveal_child()
         self.charge_revealer.set_reveal_child(revealed)
@@ -706,6 +832,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         if revealed:
             # Read real value when opened
             self.refresh_charge_limit_ui()
+            self.refresh_idle_ui()
 
     def make_mode_row(self, mode, label, icon):
         btn = Gtk.Button()
@@ -805,16 +932,55 @@ class PowerModeMenu(Gtk.ApplicationWindow):
             pass
 
     def apply_idle_profile(self):
-        script = Path.home() / ".config/powermodemenu/apply-idle-profile"
-        if not script.is_file():
-            # fallback to repo copy
-            script = Path(__file__).resolve().parent / "apply-idle-profile"
-        if script.is_file():
+        script = idle_script_path()
+        if script:
             try:
-                subprocess.Popen([str(script)], start_new_session=True,
+                subprocess.Popen([script], start_new_session=True,
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
+
+    def on_idle_preset(self, scale):
+        ok, err = set_idle_scale(scale)
+        if ok:
+            self.idle_msg.set_text(f"{L['applied']}: {IDLE_PRESET_LABELS.get(scale, 'Normal')}")
+        else:
+            self.idle_msg.set_text(f"{L['error']}: {err}")
+        GLib.timeout_add(500, self.refresh_idle_ui)
+
+    def refresh_idle_ui(self):
+        info = read_idle_info() or {}
+        scale = info.get("scale", 1.0)
+        try:
+            scale = float(scale)
+        except Exception:
+            scale = 1.0
+        label = IDLE_PRESET_LABELS.get(scale, info.get("preset", "Normal"))
+        if hasattr(self, "idle_value"):
+            self.idle_value.set_text(label)
+        if hasattr(self, "idle_preset_buttons"):
+            for val, btn in self.idle_preset_buttons.items():
+                if abs(val - scale) < 0.01:
+                    btn.add_css_class("selected")
+                else:
+                    btn.remove_css_class("selected")
+        if hasattr(self, "idle_effect"):
+            if info.get("profile") == "gaming":
+                self.idle_effect.set_text(L["idle_gaming"])
+            elif "lock" in info:
+                vals = {
+                    "lock": fmt_idle_seconds(info.get("lock")),
+                    "dpms": fmt_idle_seconds(info.get("dpms")),
+                    "suspend": fmt_idle_seconds(info.get("suspend")),
+                    "hib": fmt_idle_seconds(info.get("hibernate")) if info.get("hibernate") else "",
+                }
+                if info.get("hibernate"):
+                    self.idle_effect.set_text(L["idle_effect_hib"].format(**vals))
+                else:
+                    self.idle_effect.set_text(L["idle_effect"].format(**vals))
+            else:
+                self.idle_effect.set_text("")
+        return False
 
     def set_charge_limit(self, value):
         value = int(value)
@@ -851,6 +1017,7 @@ class PowerModeMenu(Gtk.ApplicationWindow):
         self.update_mode_rows()
         self.refresh_energy()
         self.refresh_charge_limit_ui()
+        self.refresh_idle_ui()
 
     def refresh_live(self):
         if not self.get_visible():

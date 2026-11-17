@@ -2,28 +2,62 @@
 """
 Apply hypridle timeout profile for the current powermodemenu mode and AC state.
 
-Profiles (approximating requested behavior):
-- automatic (AC):     dim 600s, lock 900s, dpms-off 930s, suspend 1800s, hibernate 3600s*
-- automatic (battery):dim 180s, lock 600s, dpms-off 630s, suspend  900s, hibernate 2700s*
-- low:                dim 120s, lock 300s, dpms-off 330s, suspend  600s
-- high:               dim 600s, lock 900s, dpms-off 930s, suspend 1800s
-- gaming:             stop/disable hypridle (idle inhibited by powermodemenu UI)
+Base profiles (Normal, scale=1.0):
+- automatic (AC):      lock 900s, dpms-off 930s, suspend 1800s, hibernate 3600s*
+- automatic (battery): lock 600s, dpms-off 630s, suspend  900s, hibernate 2700s*
+- low:                 lock 300s, dpms-off 330s, suspend  600s
+- high:                lock 900s, dpms-off 930s, suspend 1800s
+- gaming:              stop/disable hypridle (idle inhibited by powermodemenu UI)
 
 * hibernate listener added only if /sys/power/state includes "disk".
-This runs in the user session (no root). It generates a config under
-~/.config/powermodemenu/hypridle-<profile>.conf and (re)starts hypridle.
+
+A global idle scale override is read from ~/.local/state/powermodemenu/idle-timeouts.conf
+(key: scale=<float>, clamped to a safe range). The scale is applied to the base timeouts of
+the selected profile while preserving per-profile/AC proportions and enforcing order/invariants:
+lock < dpms < suspend (< hibernate). If the override is missing or invalid, defaults (1.0) apply.
+
+This runs in the user session (no root). It generates configs under
+~/.cache/powermodemenu/ and (re)starts hypridle.
 """
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
 HOME = Path.home()
-STATE_MODE = HOME / ".local/state/powermodemenu/mode"
-OUT_DIR = HOME / ".config/powermodemenu"
+STATE_DIR = HOME / ".local/state/powermodemenu"
+STATE_MODE = STATE_DIR / "mode"
+IDLE_CONF = STATE_DIR / "idle-timeouts.conf"
+OUT_DIR = HOME / ".cache/powermodemenu"
 BASE_LOCK = "$HOME/.local/bin/lock-screen"
 HYPRIDLE = shutil.which("hypridle")
+
+# (lock, dpms, suspend, hibernate|None) base seconds, scale=1.0
+BASE_PROFILES = {
+    "automatic-ac": (900, 930, 1800, 3600),
+    "automatic-battery": (600, 630, 900, 2700),
+    "low": (300, 330, 600, None),
+    "high": (900, 930, 1800, None),
+}
+
+SCALE_MIN = 0.5
+SCALE_MAX = 2.0
+SCALE_DEFAULT = 1.0
+LOCK_MIN = 30
+DPMS_GAP = 10
+SUSPEND_GAP = 30
+HIBERNATE_GAP = 60
+MAX_TIMEOUT = 8 * 3600
+
+PRESETS = [
+    ("Muy pronto", 0.5),
+    ("Pronto", 0.75),
+    ("Normal", 1.0),
+    ("Tarde", 1.25),
+    ("Muy tarde", 1.5),
+]
 
 
 def read_text(p):
@@ -31,6 +65,66 @@ def read_text(p):
         return Path(p).read_text(encoding="utf-8", errors="ignore").strip()
     except Exception:
         return None
+
+
+def read_idle_scale():
+    try:
+        text = Path(IDLE_CONF).read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return SCALE_DEFAULT
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        m = re.match(r"scale\s*=\s*([0-9]*\.?[0-9]+)", line)
+        if m:
+            try:
+                val = float(m.group(1))
+            except Exception:
+                return SCALE_DEFAULT
+            if val < SCALE_MIN:
+                return SCALE_MIN
+            if val > SCALE_MAX:
+                return SCALE_MAX
+            return val
+    return SCALE_DEFAULT
+
+
+def write_idle_scale(scale):
+    try:
+        scale = float(scale)
+    except Exception:
+        scale = SCALE_DEFAULT
+    if scale < SCALE_MIN:
+        scale = SCALE_MIN
+    if scale > SCALE_MAX:
+        scale = SCALE_MAX
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = IDLE_CONF.with_suffix(".tmp")
+    tmp.write_text(f"scale={scale:.2f}\n", encoding="utf-8")
+    os.replace(tmp, IDLE_CONF)
+    return scale
+
+
+def nearest_preset_name(scale):
+    name = "Normal"
+    best = None
+    for n, v in PRESETS:
+        d = abs(v - scale)
+        if best is None or d < best:
+            best = d
+            name = n
+    return name
+
+
+def fmt_duration(seconds):
+    seconds = max(0, int(seconds))
+    if seconds % 60 == 0:
+        return f"{seconds // 60} min"
+    m, s = divmod(seconds, 60)
+    if m:
+        return f"{m} min {s} s"
+    return f"{s} s"
 
 
 def is_on_ac():
@@ -58,8 +152,28 @@ def mode():
     return m if m in ("automatic", "low", "high", "gaming") else "automatic"
 
 
-def profile_config(name, dim, lock, dpms, suspend, hibernate=None):
+def scaled_timeouts(profile_name, scale):
+    base = BASE_PROFILES[profile_name]
+    base_lock, base_dpms, base_suspend, base_hib = base
+    lock = max(LOCK_MIN, int(round(base_lock * scale)))
+    dpms = max(lock + DPMS_GAP, int(round(base_dpms * scale)))
+    suspend = max(dpms + SUSPEND_GAP, int(round(base_suspend * scale)))
+    lock = min(lock, MAX_TIMEOUT)
+    dpms = min(dpms, MAX_TIMEOUT)
+    suspend = min(suspend, MAX_TIMEOUT)
+    # re-enforce order after caps
+    dpms = max(dpms, lock + DPMS_GAP)
+    suspend = max(suspend, dpms + SUSPEND_GAP)
+    hibernate = None
+    if base_hib is not None and hibernate_available():
+        hibernate = max(suspend + HIBERNATE_GAP, int(round(base_hib * scale)))
+        hibernate = min(max(hibernate, suspend + HIBERNATE_GAP), MAX_TIMEOUT)
+    return lock, dpms, suspend, hibernate
+
+
+def profile_config(lock, dpms, suspend, hibernate=None):
     # Build hypridle config. Listeners are independent timers (as in current config).
+    # "lock" is the effective timeout for the lock-session listener.
     lines = [
         "general {",
         f"    lock_cmd = {BASE_LOCK}",
@@ -68,7 +182,7 @@ def profile_config(name, dim, lock, dpms, suspend, hibernate=None):
         "}",
         "",
         "listener {",
-        f"    timeout = {dim}",
+        f"    timeout = {lock}",
         "    on-timeout = loginctl lock-session",
         "}",
         "",
@@ -83,7 +197,7 @@ def profile_config(name, dim, lock, dpms, suspend, hibernate=None):
         "    on-timeout = systemctl suspend",
         "}",
     ]
-    if hibernate and hibernate_available():
+    if hibernate is not None:
         lines += [
             "",
             "listener {",
@@ -113,37 +227,78 @@ def start_hypridle(conf):
     subprocess.Popen([HYPRIDLE, "-c", str(conf)], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-def main():
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
+def resolve_profile():
     m = mode()
     on_ac = is_on_ac()
-
     if m == "gaming":
-        # Gaming: idle/sleep/lock inhibited by UI; ensure hypridle is not running.
+        return "gaming", on_ac, m, read_idle_scale(), None
+    if m == "automatic" and on_ac:
+        name = "automatic-ac"
+    elif m == "automatic":
+        name = "automatic-battery"
+    elif m == "low":
+        name = "low"
+    else:
+        name = "high"
+    scale = read_idle_scale()
+    timeouts = scaled_timeouts(name, scale)
+    return name, on_ac, m, scale, timeouts
+
+
+def apply():
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    name, on_ac, m, scale, timeouts = resolve_profile()
+
+    if name == "gaming":
         stop_hypridle()
         print("idle-profile: gaming (hypridle stopped)")
         return 0
 
-    if m == "automatic" and on_ac:
-        name = "automatic-ac"
-        cfg = profile_config(name, dim=600, lock=900, dpms=930, suspend=1800, hibernate=3600)
-    elif m == "automatic":
-        name = "automatic-battery"
-        cfg = profile_config(name, dim=180, lock=600, dpms=630, suspend=900, hibernate=2700)
-    elif m == "low":
-        name = "low"
-        cfg = profile_config(name, dim=120, lock=300, dpms=330, suspend=600)
-    else:  # high
-        name = "high"
-        cfg = profile_config(name, dim=600, lock=900, dpms=930, suspend=1800)
+    lock, dpms, suspend, hibernate = timeouts
+    cfg = profile_config(lock, dpms, suspend, hibernate)
 
     conf_path = OUT_DIR / f"hypridle-{name}.conf"
     conf_path.write_text(cfg, encoding="utf-8")
-    # Also write a "current" pointer for reference
     (OUT_DIR / "hypridle-current.conf").write_text(cfg, encoding="utf-8")
     start_hypridle(conf_path)
-    print(f"idle-profile: applied {name} (on_ac={on_ac}) -> {conf_path}")
+    preset = nearest_preset_name(scale)
+    hib = f", hib={hibernate}s" if hibernate is not None else ""
+    print(
+        f"idle-profile: applied {name} (on_ac={on_ac}, scale={scale:.2f} {preset}, "
+        f"lock={lock}s, dpms={dpms}s, suspend={suspend}s{hib}) -> {conf_path}"
+    )
     return 0
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--print":
+        name, on_ac, m, scale, timeouts = resolve_profile()
+        preset = nearest_preset_name(scale)
+        info = {
+            "profile": name,
+            "mode": m,
+            "on_ac": on_ac,
+            "scale": round(scale, 4),
+            "preset": preset,
+        }
+        if timeouts:
+            lock, dpms, suspend, hibernate = timeouts
+            info.update({"lock": lock, "dpms": dpms, "suspend": suspend, "hibernate": hibernate})
+        print(__import__("json").dumps(info, ensure_ascii=False))
+        return 0
+    if args and args[0] == "--set-scale":
+        if len(args) < 2:
+            print("usage: apply-idle-profile --set-scale <0.5-2.0>", file=sys.stderr)
+            return 2
+        try:
+            write_idle_scale(float(args[1]))
+        except Exception:
+            print("invalid scale", file=sys.stderr)
+            return 2
+        return apply()
+    return apply()
 
 
 if __name__ == "__main__":

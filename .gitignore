@@ -12,3 +12,7 @@ theme/.config/theme/backgrounds/
 # Python bytecode
 __pycache__/
 *.pyc
+
+# powermodemenu runtime-generated hypridle configs (safety net; primary output is ~/.cache/powermodemenu)
+scripts/.config/powermodemenu/hypridle-*.conf
+scripts/.config/powermodemenu/hypridle-current.conf
