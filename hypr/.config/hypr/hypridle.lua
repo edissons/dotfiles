@@ -36,9 +36,9 @@
 
 --!       ░▒▓▓   ▓▓  //____/
 
-local LOCK_CMD = "pidof hyprlock || hyprlock"
+local LOCK_CMD = os.getenv("HOME") .. "/.local/bin/lock-screen"
 
--- Calls $LOCKSCREEN default is hyprlock
+-- Calls lock-screen (themed Glasshouse lockscreen)
 
 local UNLOCK_CMD = "sh -c 'sleep 3 && pkill -9 hyprlock 2>/dev/null || true'"
 
@@ -46,9 +46,9 @@ local UNLOCK_CMD = "sh -c 'sleep 3 && pkill -9 hyprlock 2>/dev/null || true'"
 
 hl.config({
     general = {
-        lock_cmd = "pidof hyprlock || hyprlock",
+        lock_cmd = LOCK_CMD,
         -- command when `loginctl lock-session` is called
-        unlock_cmd = "sh -c 'sleep 3 && pkill -9 hyprlock 2>/dev/null || true'",
+        unlock_cmd = UNLOCK_CMD,
         -- command when `loginctl unlock-session` is called
         ignore_dbus_inhibit = false,
         -- Ignore dbus idle-inhibit requests (false = respect them)

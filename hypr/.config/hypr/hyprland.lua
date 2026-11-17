@@ -216,6 +216,7 @@ hl.on("hyprland.start", function()
     hl.exec_cmd("dbus-update-activation-environment WAYLAND_DISPLAY XDG_CURRENT_DESKTOP")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/dock-restart")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/swaync-run")
-    hl.exec_cmd("hypridle -c " .. os.getenv("HOME") .. "/dotfiles/hypr/.config/hypr/hypridle.conf")
+    -- Aplica el perfil de inactividad/energía persistido (powermodemenu); fallback al hypridle del repo
+    hl.exec_cmd("bash -lc '[ -x \"$HOME/.config/powermodemenu/apply-idle-profile\" ] && \"$HOME/.config/powermodemenu/apply-idle-profile\" || hypridle -c \"$HOME/dotfiles/hypr/.config/hypr/hypridle.conf\"'")
     hl.exec_cmd(os.getenv("HOME") .. "/.local/bin/low-end-toggle apply")
 end)
