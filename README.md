@@ -116,6 +116,7 @@ Notas:
 | `--install-sddm-deps` | Instala con `pacman -S --needed` el **perfil de dependencias SDDM** (opt-in). Respeta `--dry-run`/`--yes` y pide confirmación/sudo. No instala AUR ni usa `paru`. | `sudo` |
 | `--with-fingerprint` | Añade la huella como alternativa a la contraseña en SDDM: `pam_fprintd` en `/etc/pam.d/sddm` (con backup) y tema `glass` con el botón de huella. Requiere `fprintd` y una huella enrolada. | `sudo` |
 | `--with-lockout` | Bloqueo progresivo por contraseñas fallidas en SDDM y hyprlock (5 s a 300 s): reescribe `/etc/pam.d/{sddm,hyprlock}` (con backups), instala `glasshouse-pam-cooldown` y una instancia propia de `faillock`. | `sudo` |
+| `--with-powermodemenu` | Instala el helper de modos de energía y sus hooks de sistema: `/usr/local/lib/powermodemenu/{powermodemenu-helper,powermodemenu-on-power-change}`, regla udev (`/etc/udev/rules.d/90-powermodemenu.rules`), polkit (`/etc/polkit-1/rules.d/90-powermodemenu.rules`) y sudoers (`/etc/sudoers.d/powermodemenu`). Enlaza y habilita el servicio de usuario `powermodemenu-apply.service`. | `sudo` |
 | `--allow-nonstandard` | Permite ejecutar el instalador fuera de `~/dotfiles`. Solo para pruebas: los scripts de sesión siguen asumiendo `~/dotfiles`. | — |
 
 Opciones generales: `--dry-run` muestra las acciones sin cambiar nada, `--yes`
@@ -1322,10 +1323,25 @@ auto-ocultado de la barra y los ajustes del dock. El panel usa
 `waybar/.config/waybar/settings.css`, cargado después de
 `~/.config/theme/current.css`.
 
-En la zona derecha, entre `custom/power` y `custom/notifications`, está
-`custom/gaming`, un módulo icon-only (16 px). Ejecuta `gaming-status`, que
-imprime el JSON de Waybar (icono, clase `on`/`off` y tooltip). Al hacer clic
-llama a `gaming-toggle` y envía `SIGRTMIN+9` a Waybar para refrescar el estado.
+El modo gaming ya no ocupa un módulo en la barra: se selecciona en el popup
+**Batería / Modo de energía** (`powermodemenu`), que lo integra como cuarto modo
+junto a Automático, Bajo consumo y Alto rendimiento. Al activarlo detiene
+`hypridle` y mantiene un inhibidor
+`systemd-inhibit --what=idle:sleep:handle-lid-switch`, de modo que quedan
+desactivados idle, bloqueo, suspensión y el cierre por tapa; además aplica el
+perfil de rendimiento alto. Solo está disponible con el cargador conectado: al
+desenchufar cae a Automático. El estado se guarda en
+`~/.local/state/powermodemenu/mode`.
+
+Para que el modo Automático cambie de perfil al enchufar/desenchufar y se
+restaure al iniciar sesión, instala los hooks con
+`./install.sh --yes --with-powermodemenu` (helper/udev/polkit/sudoers y
+`powermodemenu-apply.service`). Sin esos hooks la UI aplica el modo al
+seleccionarlo, pero el cambio de estado AC/batería no lo reevalúa en segundo
+plano.
+
+`gaming-toggle` y `gaming-status` siguen disponibles por terminal
+(`on|off|toggle`), pero la barra ya no los usa.
 
 También en la zona derecha, `custom/gamepad-battery` muestra la batería del
 mando Bluetooth. Ejecuta `gamepad-battery`, que lee `org.bluez.Battery1` del
@@ -1336,18 +1352,6 @@ clases `charging`, `warning` (≤30 %) y `critical` (≤15 %) y se refresca con
 `SIGRTMIN+7`. Sin mando conectado o sin servicio de batería (p. ej. el modo
 Android del GameSir) no imprime nada y Waybar oculta el módulo; el interruptor
 «Batería mando» del panel de ajustes lo activa o desactiva.
-
-`gaming-toggle` activa o desactiva el modo gaming. Al activarlo detiene `hypridle`
-y mantiene un inhibidor
-`systemd-inhibit --what=idle:sleep:handle-lid-switch`, de modo que quedan
-desactivados idle, bloqueo, suspensión y el cierre por tapa. El estado se guarda
-en `${XDG_RUNTIME_DIR}/gaming-mode.state`. Al desactivarlo libera el inhibidor y
-vuelve a lanzar
-`hypridle -c ~/dotfiles/hypr/.config/hypr/hypridle.conf`.
-
-El botón es idempotente y los cambios se serializan con `flock`, así que pulsarlo
-varias veces no duplica inhibidores. Los alias antiguos de terminal siguen
-existiendo, pero la barra usa el wrapper `gaming-toggle`.
 
 ## SwayNC
 
