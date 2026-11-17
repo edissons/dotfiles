@@ -1327,6 +1327,16 @@ En la zona derecha, entre `custom/power` y `custom/notifications`, está
 imprime el JSON de Waybar (icono, clase `on`/`off` y tooltip). Al hacer clic
 llama a `gaming-toggle` y envía `SIGRTMIN+9` a Waybar para refrescar el estado.
 
+También en la zona derecha, `custom/gamepad-battery` muestra la batería del
+mando Bluetooth. Ejecuta `gamepad-battery`, que lee `org.bluez.Battery1` del
+primer dispositivo conectado cuyo `Device1.Name` coincida con `XPADNEO_BT_NAME`
+(por defecto `Xbox|GameSir`) y usa los iconos MDI de mando con batería
+(`microsoft-xbox-controller-battery-*`). Comparte con `waybar-battery` las
+clases `charging`, `warning` (≤30 %) y `critical` (≤15 %) y se refresca con
+`SIGRTMIN+7`. Sin mando conectado o sin servicio de batería (p. ej. el modo
+Android del GameSir) no imprime nada y Waybar oculta el módulo; el interruptor
+«Batería mando» del panel de ajustes lo activa o desactiva.
+
 `gaming-toggle` activa o desactiva el modo gaming. Al activarlo detiene `hypridle`
 y mantiene un inhibidor
 `systemd-inhibit --what=idle:sleep:handle-lid-switch`, de modo que quedan
@@ -1567,6 +1577,8 @@ español y usa `⊞` para la tecla Super:
   si `/sys/power/state` incluye `disk`.
 - `scripts/.local/bin/waybar-battery`: módulo de Waybar con tooltip de modo actual
   y `on-click` para abrir el popup de batería.
+- `scripts/.local/bin/gamepad-battery`: módulo de Waybar con la batería del mando
+  Bluetooth (BlueZ GATT); se oculta sin mando conectado o sin batería expuesta.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.

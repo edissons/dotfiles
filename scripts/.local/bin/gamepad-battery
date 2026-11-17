@@ -21,8 +21,13 @@ import sys
 
 NAME_FILTER = os.environ.get("XPADNEO_BT_NAME", "Xbox|GameSir")
 
-ICONS = ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
-ICON_CHARGING = "󰂄"
+# MDI "microsoft-xbox-controller-battery-*": controller with an integrated
+# battery, so the module is distinguishable from the laptop battery at a glance.
+ICON_CHARGING = "\U000F0A22"  # microsoft-xbox-controller-battery-charging
+ICON_EMPTY = "\U000F074C"     # microsoft-xbox-controller-battery-empty
+ICON_LOW = "\U000F074E"       # microsoft-xbox-controller-battery-low
+ICON_MEDIUM = "\U000F074F"    # microsoft-xbox-controller-battery-medium
+ICON_FULL = "\U000F074D"      # microsoft-xbox-controller-battery-full
 
 UP_CHARGING = (1, 5)  # UPower State: charging, pending-charge
 UP_FULL = (4,)        # UPower State: fully-charged
@@ -80,6 +85,18 @@ def upower_state(bluez_path, name):
     return None
 
 
+def battery_icon(pct, charging):
+    if charging:
+        return ICON_CHARGING
+    if pct <= 10:
+        return ICON_EMPTY
+    if pct <= 30:
+        return ICON_LOW
+    if pct <= 70:
+        return ICON_MEDIUM
+    return ICON_FULL
+
+
 def main():
     ctrl = find_controller()
     if ctrl is None:
@@ -100,7 +117,7 @@ def main():
         st = upower_state(path, name)
         charging, full = st in UP_CHARGING, st in UP_FULL
 
-    icon = ICON_CHARGING if (charging or full) else ICONS[min(9, max(0, pct // 10))]
+    icon = battery_icon(pct, charging)
 
     classes = []
     if charging:
