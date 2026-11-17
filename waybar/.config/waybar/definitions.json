@@ -191,6 +191,14 @@
     "tooltip": true,
     "on-click": "$HOME/.local/bin/gaming-toggle; pkill -SIGRTMIN+9 -x waybar"
   },
+  "custom/gamepad-battery": {
+    "exec": "$HOME/.local/bin/gamepad-battery",
+    "return-type": "json",
+    "interval": 10,
+    "signal": 7,
+    "format": "{}",
+    "tooltip": true
+  },
   "custom/notifications": {
     "exec": "swaync-client -swb",
     "return-type": "json",

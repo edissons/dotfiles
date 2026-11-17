@@ -55,15 +55,15 @@ background: @surface;
 
 #window { padding: 0 10px; color: @subtext; font-family: "SF Pro Text"; font-weight: 500; }
 
-#tray, #bluetooth, #network, #pulseaudio, #battery, #custom-battery, #clock {
+#tray, #bluetooth, #network, #pulseaudio, #battery, #custom-battery, #custom-gamepad-battery, #clock {
 padding: 0 10px;
 }
 
 #clock { font-family: "SF Pro Text"; font-weight: 500; }
 
-#battery.charging, #custom-battery.charging { color: @green; }
-#battery.warning:not(.charging), #custom-battery.warning:not(.charging) { color: @yellow; }
-#battery.critical:not(.charging), #custom-battery.critical:not(.charging) { color: @red; }
+#battery.charging, #custom-battery.charging, #custom-gamepad-battery.charging { color: @green; }
+#battery.warning:not(.charging), #custom-battery.warning:not(.charging), #custom-gamepad-battery.warning:not(.charging) { color: @yellow; }
+#battery.critical:not(.charging), #custom-battery.critical:not(.charging), #custom-gamepad-battery.critical:not(.charging) { color: @red; }
 
 #pulseaudio.muted, #network.disconnected, #bluetooth.off, #bluetooth.disabled {
 color: @subtext;

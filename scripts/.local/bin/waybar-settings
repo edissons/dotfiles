@@ -46,6 +46,7 @@ NAMES = {
     "custom/settings": "Ajustes",
     "custom/power": "Energía",
     "custom/gaming": "Gaming",
+    "custom/gamepad-battery": "Batería mando",
     "custom/notifications": "Notificaciones",
 }
 

@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+"""Waybar custom module: Bluetooth gamepad battery (GameSir Nova Lite / Xbox BLE).
+
+Reads the BlueZ GATT battery (org.bluez.Battery1) of the first connected
+device whose Name matches XPADNEO_BT_NAME (default: Xbox|GameSir). Charging
+state comes from org.bluez.Battery2 when the BlueZ version provides it,
+otherwise from UPower. Hides the module when the controller is not
+connected or exposes no battery (e.g. the Android DInput mode of the
+Nova Lite).
+
+Environment:
+    XPADNEO_BT_NAME  regex to pick the controller (default: Xbox|GameSir)
+
+Refresh instantly with:  pkill -SIGRTMIN+7 -x waybar
+"""
+import json
+import os
+import re
+import subprocess
+import sys
+
+NAME_FILTER = os.environ.get("XPADNEO_BT_NAME", "Xbox|GameSir")
+
+ICONS = ["󰁺", "󰁻", "󰁼", "󰁽", "󰁾", "󰁿", "󰂀", "󰂁", "󰂂", "󰁹"]
+ICON_CHARGING = "󰂄"
+
+UP_CHARGING = (1, 5)  # UPower State: charging, pending-charge
+UP_FULL = (4,)        # UPower State: fully-charged
+
+
+def run(*args):
+    return subprocess.run(args, capture_output=True, text=True)
+
+
+def prop(bus, path, iface, name):
+    """Return the raw busctl property value ('85', 'true', '"Name"') or None."""
+    r = run("busctl", "get-property", bus, path, iface, name)
+    if r.returncode != 0:
+        return None
+    v = r.stdout.strip()
+    return v.partition(" ")[2] if " " in v else None
+
+
+def prop_int(bus, path, iface, name):
+    v = prop(bus, path, iface, name)
+    return int(v) if v and v.isdigit() else None
+
+
+def prop_str(bus, path, iface, name):
+    v = prop(bus, path, iface, name)
+    return v.strip('"') if v else None
+
+
+def _norm(s):
+    return s.strip().lower().replace(":", "_")
+
+
+def find_controller():
+    out = run("busctl", "tree", "org.bluez", "--list").stdout
+    for path in re.findall(r"/org/bluez/hci\d+/dev_[0-9A-F_]+", out):
+        if prop("org.bluez", path, "org.bluez.Device1", "Connected") != "true":
+            continue  # paired but not connected (e.g. the other controller mode)
+        name = prop_str("org.bluez", path, "org.bluez.Device1", "Name")
+        if name and re.search(NAME_FILTER, name):
+            mac = path.split("/dev_")[-1].replace("_", ":")
+            return path, name, mac
+    return None
+
+
+def upower_state(bluez_path, name):
+    """UPower State of the controller battery, or None if UPower has no entry."""
+    out = run("busctl", "tree", "org.freedesktop.UPower", "--list").stdout
+    want = _norm(bluez_path)
+    for p in re.findall(r"/org/freedesktop/UPower/devices/\S+", out):
+        model = prop_str("org.freedesktop.UPower", p, "org.freedesktop.UPower.Device", "Model")
+        native = prop_str("org.freedesktop.UPower", p, "org.freedesktop.UPower.Device", "NativePath")
+        if model == name or (native and _norm(native) == want):
+            st = prop("org.freedesktop.UPower", p, "org.freedesktop.UPower.Device", "State")
+            return int(st) if st and st.isdigit() else None
+    return None
+
+
+def main():
+    ctrl = find_controller()
+    if ctrl is None:
+        sys.exit(0)  # not connected: hide the module
+
+    path, name, mac = ctrl
+
+    pct = prop_int("org.bluez", path, "org.bluez.Battery1", "Percentage")
+    if pct is None:
+        pct = prop_int("org.bluez", path, "org.bluez.Battery2", "Percentage")
+    if pct is None:
+        sys.exit(0)  # no battery service (e.g. Android mode): hide the module
+
+    ch = prop("org.bluez", path, "org.bluez.Battery2", "Charging")
+    if ch in ("true", "false"):
+        charging, full = ch == "true", False
+    else:  # no Battery2 on this BlueZ: fall back to UPower state
+        st = upower_state(path, name)
+        charging, full = st in UP_CHARGING, st in UP_FULL
+
+    icon = ICON_CHARGING if (charging or full) else ICONS[min(9, max(0, pct // 10))]
+
+    classes = []
+    if charging:
+        classes.append("charging")
+    elif pct <= 15:
+        classes.append("critical")
+    elif pct <= 30:
+        classes.append("warning")
+
+    status = "Cargando" if charging else ("Llena" if full else "Batería")
+    tooltip = f"{name} ({mac})\n{status}: {pct}%"
+
+    print(json.dumps({
+        "text": f"{icon} {pct}%",
+        "tooltip": tooltip,
+        "class": classes,
+    }))
+
+
+if __name__ == "__main__":
+    main()
