@@ -17,7 +17,7 @@
 # Usage:
 #   ./install.sh [--dry-run] [--yes] [--verbose] [--allow-nonstandard]
 #                [--with-session] [--with-fonts] [--with-sddm] [--with-boot-sound]
-#                [--with-localeinput]
+#                [--with-localeinput] [--with-powermodemenu]
 #                [--install-deps] [--install-desktop-deps] [--install-sddm-deps]
 #   ./install.sh --help
 #
@@ -47,6 +47,7 @@ WITH_BOOT_SOUND=0
 WITH_FINGERPRINT=0
 WITH_LOCKOUT=0
 WITH_LOCALEINPUT=0
+WITH_POWERMODEMENU=0
 INSTALL_DEPS=0
 INSTALL_DESKTOP_DEPS=0
 INSTALL_SDDM_DEPS=0
@@ -163,6 +164,15 @@ Flags:
                          settings menu calls it via pkexec; it validates locales
                          against /usr/share/i18n/SUPPORTED and layouts against
                          evdev.lst.
+  --with-powermodemenu   Install the power-mode helper and its system hooks
+                         (sudo): /usr/local/lib/powermodemenu/
+                         {powermodemenu-helper,powermodemenu-on-power-change},
+                         the udev rule
+                         /etc/udev/rules.d/90-powermodemenu.rules, the polkit
+                         rule /etc/polkit-1/rules.d/90-powermodemenu.rules and
+                         /etc/sudoers.d/powermodemenu. Also links and enables
+                         the user unit powermodemenu-apply.service so the saved
+                         mode is restored at login.
   --install-deps         Install missing required Arch packages with pacman.
   --install-desktop-deps Install the optional Arch desktop dependency profile
                          with pacman (opt-in; no AUR/paru, no pacman -Sy).
@@ -250,6 +260,7 @@ parse_args() {
       --with-fingerprint) WITH_FINGERPRINT=1 ;;
       --with-lockout) WITH_LOCKOUT=1 ;;
       --with-localeinput) WITH_LOCALEINPUT=1 ;;
+      --with-powermodemenu) WITH_POWERMODEMENU=1 ;;
       --install-deps) INSTALL_DEPS=1 ;;
       --install-desktop-deps) INSTALL_DESKTOP_DEPS=1 ;;
       --install-sddm-deps) INSTALL_SDDM_DEPS=1 ;;
@@ -493,6 +504,12 @@ link_configs() {
   safe_link "$REPO/theme/.local/bin/theme-toggle" "$HOME/.local/bin/theme-toggle"
   safe_link "$REPO/systemd/.config/systemd/user/battery-alert.service" "$HOME/.config/systemd/user/battery-alert.service"
   safe_link "$REPO/systemd/.config/systemd/user/wallpaper-carousel.service" "$HOME/.config/systemd/user/wallpaper-carousel.service"
+  safe_link "$REPO/systemd/.config/systemd/user/powermodemenu-apply.service" "$HOME/.config/systemd/user/powermodemenu-apply.service"
+
+  mkdir -p -- "$HOME/.config/powermodemenu"
+  safe_link "$REPO/scripts/.config/powermodemenu/powermodemenu.py" "$HOME/.config/powermodemenu/powermodemenu.py"
+  safe_link "$REPO/scripts/.config/powermodemenu/apply-idle-profile" "$HOME/.config/powermodemenu/apply-idle-profile"
+  safe_link "$REPO/scripts/.config/powermodemenu/apply-saved-mode.sh" "$HOME/.config/powermodemenu/apply-saved-mode.sh"
 }
 
 ensure_pictures() {
@@ -657,6 +674,7 @@ enable_user_services() {
   if (( DRY_RUN )); then
     log "[dry-run] systemctl --user daemon-reload"
     log "[dry-run] systemctl --user enable --now battery-alert.service"
+    log "[dry-run] systemctl --user enable --now powermodemenu-apply.service (if linked)"
     return 0
   fi
   if ! command -v systemctl >/dev/null 2>&1; then
@@ -676,6 +694,15 @@ enable_user_services() {
     fi
   else
     vlog "battery-alert.service not linked; skipping enable"
+  fi
+  if [[ -e "$HOME/.config/systemd/user/powermodemenu-apply.service" || -L "$HOME/.config/systemd/user/powermodemenu-apply.service" ]]; then
+    if ! systemctl --user enable --now powermodemenu-apply.service; then
+      warn "Could not enable/start powermodemenu-apply.service (user systemd unavailable?); run: systemctl --user enable --now powermodemenu-apply.service"
+    else
+      vlog "powermodemenu-apply.service enabled/started"
+    fi
+  else
+    vlog "powermodemenu-apply.service not linked; skipping enable"
   fi
 }
 
@@ -995,6 +1022,98 @@ install_localeinput() {
     return 0
   fi
   ok "Language & Input helper installed (polkit watches rules.d automatically)"
+}
+
+install_powermodemenu() {
+  log "Installing power-mode helper and system hooks (sudo)"
+  local helper_src="$REPO/scripts/.local/lib/powermodemenu/powermodemenu-helper"
+  local hook_src="$REPO/scripts/.local/lib/powermodemenu/powermodemenu-on-power-change"
+  local udev_src="$REPO/scripts/system/polkit/90-powermodemenu-udev.rules"
+  local polkit_src="$REPO/scripts/system/polkit/90-powermodemenu.rules"
+  local sudoers_src="$REPO/scripts/system/polkit/powermodemenu.sudoers"
+  local helper_dst="/usr/local/lib/powermodemenu/powermodemenu-helper"
+  local hook_dst="/usr/local/lib/powermodemenu/powermodemenu-on-power-change"
+  local udev_dst="/etc/udev/rules.d/90-powermodemenu.rules"
+  local polkit_dst="/etc/polkit-1/rules.d/90-powermodemenu.rules"
+  local sudoers_dst="/etc/sudoers.d/powermodemenu"
+
+  local f
+  for f in "$helper_src" "$hook_src" "$udev_src" "$polkit_src" "$sudoers_src"; do
+    if [[ ! -f "$f" ]]; then
+      error "Power-mode file is missing: $f"
+      return 0
+    fi
+  done
+
+  if (( DRY_RUN )); then
+    log "[dry-run] sudo install -Dm755 $helper_src $helper_dst"
+    log "[dry-run] sudo install -Dm755 $hook_src $hook_dst"
+    log "[dry-run] sudo install -Dm644 $udev_src $udev_dst"
+    log "[dry-run] sudo install -Dm644 $polkit_src $polkit_dst"
+    log "[dry-run] sudo visudo -cf <tmp> && sudo install -Dm440 $sudoers_src $sudoers_dst"
+    log "[dry-run] sudo udevadm control --reload-rules"
+    log "[dry-run] sudo udevadm trigger --subsystem-match=power_supply"
+    log "[dry-run] systemctl --user enable --now powermodemenu-apply.service"
+    return 0
+  fi
+
+  if ! confirm "Install the power-mode helper, udev/polkit rules and user service (sudo)?"; then
+    warn "Skipped power-mode installation"
+    return 0
+  fi
+
+  if ! sudo install -Dm755 "$helper_src" "$helper_dst"; then
+    error "Could not install $helper_dst"
+    return 0
+  fi
+  if ! sudo install -Dm755 "$hook_src" "$hook_dst"; then
+    error "Could not install $hook_dst"
+    return 0
+  fi
+  if ! sudo install -Dm644 "$udev_src" "$udev_dst"; then
+    error "Could not install $udev_dst"
+    return 0
+  fi
+  if ! sudo install -Dm644 "$polkit_src" "$polkit_dst"; then
+    error "Could not install $polkit_dst"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp)"
+  TMP_FILES+=("$tmp")
+  if ! cp "$sudoers_src" "$tmp" || ! sudo visudo -cf "$tmp"; then
+    error "Invalid sudoers file: $sudoers_src"
+    return 0
+  fi
+  if ! sudo install -Dm440 "$tmp" "$sudoers_dst"; then
+    error "Could not install $sudoers_dst"
+    return 0
+  fi
+
+  if ! sudo udevadm control --reload-rules; then
+    warn "Could not reload udev rules; run: sudo udevadm control --reload-rules"
+  fi
+  if ! sudo udevadm trigger --subsystem-match=power_supply; then
+    warn "Could not trigger power_supply udev events"
+  fi
+
+  ok "Power-mode helper, udev/polkit rules and sudoers installed"
+
+  if systemctl --user daemon-reload; then
+    vlog "systemctl --user daemon-reload ok"
+  else
+    warn "Could not run systemctl --user daemon-reload"
+  fi
+  if [[ -e "$HOME/.config/systemd/user/powermodemenu-apply.service" || -L "$HOME/.config/systemd/user/powermodemenu-apply.service" ]]; then
+    if systemctl --user enable --now powermodemenu-apply.service; then
+      vlog "powermodemenu-apply.service enabled/started"
+    else
+      warn "Could not enable/start powermodemenu-apply.service; run: systemctl --user enable --now powermodemenu-apply.service"
+    fi
+  else
+    warn "powermodemenu-apply.service is not linked in ~/.config/systemd/user"
+  fi
 }
 
 install_session() {
@@ -1633,6 +1752,9 @@ main() {
   fi
   if (( WITH_LOCALEINPUT )); then
     install_localeinput
+  fi
+  if (( WITH_POWERMODEMENU )); then
+    install_powermodemenu
   fi
 
   validate_all
