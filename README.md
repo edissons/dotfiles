@@ -1353,6 +1353,13 @@ clases `charging`, `warning` (≤30 %) y `critical` (≤15 %) y se refresca con
 Android del GameSir) no imprime nada y Waybar oculta el módulo; el interruptor
 «Batería mando» del panel de ajustes lo activa o desactiva.
 
+En pantalla completa (donde la barra no se ve), `~/.local/bin/gamepad-overlay`
+(autostart vía `exec-once` en `userprefs.conf`) muestra un overlay layer-shell
+esquina superior derecha con la batería del mando mientras la ventana activa
+esté en fullscreen y haya lectura disponible; se oculta al salir de fullscreen
+o si el mando se desconecta. Depende de `gamepad-battery` y de
+`gtk3`/`gtk-layer-shell` (PyGObject).
+
 ## SwayNC
 
 Archivo: `swaync/.config/swaync/style.css`.
@@ -1583,6 +1590,9 @@ español y usa `⊞` para la tecla Super:
   y `on-click` para abrir el popup de batería.
 - `scripts/.local/bin/gamepad-battery`: módulo de Waybar con la batería del mando
   Bluetooth (BlueZ GATT); se oculta sin mando conectado o sin batería expuesta.
+- `scripts/.local/bin/gamepad-overlay`: overlay layer-shell (esquina superior
+  derecha) que muestra la batería del mando en ventanas fullscreen; se oculta
+  fuera de fullscreen o sin mando/batería. Depende de `gamepad-battery`.
 
 - `theme/.local/bin/theme-toggle`: tema claro/oscuro.
 - `scripts/.local/bin/theme-lua-gen`: regenera `colors.lua` desde `colors.conf`.

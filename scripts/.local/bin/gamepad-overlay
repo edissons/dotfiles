@@ -1,0 +1,140 @@
+#!/usr/bin/env python3
+"""Small always-on-top overlay showing gamepad battery when a game is fullscreen.
+
+Designed for Hyprland + gtk3-layer-shell. Shows in the top-right corner while
+the active window is fullscreen and a controller battery is available (via
+~/.local/bin/gamepad-battery). Hidden otherwise.
+
+No focus, no keyboard input, no exclusive zone. Polls every few seconds.
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("GtkLayerShell", "0.1")
+from gi.repository import GLib, Gtk, GtkLayerShell
+
+BATTERY_CMD = os.path.expanduser("~/.local/bin/gamepad-battery")
+POLL_MS = 5000
+MARGIN = 12
+
+CSS = b"""
+window {
+    background: rgba(20, 20, 24, 0.72);
+    border-radius: 10px;
+}
+#box { padding: 6px 10px; }
+#label {
+    font-family: "JetBrainsMono Nerd Font", "Symbols Nerd Font", monospace;
+    font-size: 14px;
+    font-weight: 600;
+    color: #cdd6f4;
+}
+#label.charging { color: #a6e3a1; }
+#label.warning  { color: #f9e2af; }
+#label.critical { color: #f38ba8; }
+"""
+
+
+def run_json(cmd):
+    try:
+        r = subprocess.run([cmd], capture_output=True, text=True, timeout=3)
+        out = r.stdout.strip()
+        return json.loads(out) if out else None
+    except Exception:
+        return None
+
+
+def hypr_active_fullscreen():
+    try:
+        r = subprocess.run(
+            ["hyprctl", "activewindow", "-j"],
+            capture_output=True, text=True, timeout=2,
+        )
+        if r.returncode != 0:
+            return False
+        d = json.loads(r.stdout or "{}")
+        # Hyprland: fullscreen 0 = none, 1 = maximize, 2 = fullscreen
+        return int(d.get("fullscreen", 0)) > 0
+    except Exception:
+        return False
+
+
+class Overlay(Gtk.Window):
+    def __init__(self):
+        super().__init__(type=Gtk.WindowType.TOPLEVEL)
+
+        GtkLayerShell.init_for_window(self)
+        GtkLayerShell.set_layer(self, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.TOP, True)
+        GtkLayerShell.set_anchor(self, GtkLayerShell.Edge.RIGHT, True)
+        GtkLayerShell.set_margin(self, GtkLayerShell.Edge.TOP, MARGIN)
+        GtkLayerShell.set_margin(self, GtkLayerShell.Edge.RIGHT, MARGIN)
+        GtkLayerShell.set_exclusive_zone(self, 0)
+        GtkLayerShell.set_keyboard_mode(self, GtkLayerShell.KeyboardMode.NONE)
+
+        provider = Gtk.CssProvider()
+        provider.load_from_data(CSS)
+        Gtk.StyleContext.add_provider_for_screen(
+            self.get_screen(), provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        box.set_name("box")
+        self.label = Gtk.Label(label="")
+        self.label.set_name("label")
+        box.pack_start(self.label, True, True, 0)
+        self.add(box)
+
+        self._last_class = None
+        self.hide()
+
+    def _set_class(self, classes):
+        cls = (classes or [None])[0]
+        if cls == self._last_class:
+            return
+        ctx = self.label.get_style_context()
+        for c in ("charging", "warning", "critical"):
+            ctx.remove_class(c)
+        if cls in ("charging", "warning", "critical"):
+            ctx.add_class(cls)
+        self._last_class = cls
+
+    def refresh(self):
+        battery = run_json(BATTERY_CMD)
+        fullscreen = hypr_active_fullscreen()
+
+        if battery and fullscreen and battery.get("text"):
+            self.label.set_text(battery["text"])
+            self._set_class(battery.get("class"))
+            tip = battery.get("tooltip")
+            self.set_tooltip_text(tip.replace("\\n", "\n") if tip else None)
+            if not self.get_visible():
+                self.show_all()
+        else:
+            if self.get_visible():
+                self.hide()
+        return True  # keep timer
+
+
+def main():
+    win = Overlay()
+    win.refresh()
+    GLib.timeout_add(POLL_MS, win.refresh)
+
+    def quit(*_):
+        Gtk.main_quit()
+
+    signal.signal(signal.SIGINT, quit)
+    signal.signal(signal.SIGTERM, quit)
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
