@@ -54,7 +54,7 @@ el instalador asumen esa ruta.
 Clona el repositorio en `~/dotfiles` (sustituye el marcador por la URL real):
 
 ```bash
-git clone <URL-DEL-REPOSITORIO> ~/dotfiles
+git clone https://github.com/edissons/dotfiles ~/dotfiles
 cd ~/dotfiles
 ```
 
